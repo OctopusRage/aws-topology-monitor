@@ -582,6 +582,29 @@ html, body, #root {
 .metric-bar span { display: block; height: 100%; border-radius: 4px; transition: width .4s; }
 .metric-chart { margin-top: 4px; }
 
+/* ---------- Top SQL (RDS) ---------- */
+.topsql { padding: 4px 24px 24px; }
+.topsql .node-kicker { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.topsql-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.topsql-table th {
+  text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--node-border);
+}
+.topsql-table th.num, .topsql-table td.num { text-align: right; }
+.topsql-table td { padding: 8px 10px; border-bottom: 1px solid var(--node-border); vertical-align: middle; }
+.topsql-table td.rank { color: var(--muted); width: 24px; }
+.topsql-table td.sql { max-width: 0; width: 100%; }
+.topsql-table td.sql code {
+  font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11.5px; color: var(--text);
+  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.topsql-table td.load { position: relative; white-space: nowrap; min-width: 120px; }
+.topsql-table td.load .load-bar {
+  position: absolute; left: 10px; bottom: 3px; height: 3px; border-radius: 2px;
+  background: var(--accent); opacity: .55;
+}
+.topsql-table td.load .load-val { position: relative; font-weight: 600; color: var(--accent); }
+
 .server-list { padding: 0 24px 24px; }
 .server-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chip {

@@ -104,6 +104,20 @@ export const mockProvider = {
     };
   },
 
+  async getRdsTopQueries() {
+    return {
+      enabled: true,
+      engine: 'postgres',
+      queries: [
+        { sql: 'SELECT * FROM messages WHERE room_id = $1 ORDER BY created_at DESC LIMIT $2', id: 'A1B2', load: 2.14, calls: 18200 },
+        { sql: 'UPDATE user_sessions SET last_seen = now() WHERE user_id = $1', id: 'C3D4', load: 1.02, calls: 54000 },
+        { sql: 'INSERT INTO events (type, payload, created_at) VALUES ($1, $2, $3)', id: 'E5F6', load: 0.88, calls: 31200 },
+        { sql: 'SELECT count(*) FROM subscriptions WHERE status = $1 AND expires_at > now()', id: 'G7H8', load: 0.45, calls: 6400 },
+        { sql: 'SELECT u.* FROM users u JOIN guild_members gm ON gm.user_id = u.id WHERE gm.guild_id = $1', id: 'I9J0', load: 0.31, calls: 2100 },
+      ],
+    };
+  },
+
   // Resolve a target group ARN to its member instances (used by metrics layer).
   async getTargetGroupTargets(tgArn) {
     for (const lb of LOAD_BALANCERS) {

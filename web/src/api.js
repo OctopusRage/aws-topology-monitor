@@ -59,6 +59,10 @@ export const api = {
   listDatasources: () => get('/api/datasources'),
   datapointMetrics: (datapoint, range) =>
     post('/api/metrics/datapoint', { datapoint, range }),
+  rdsTopQueries: (dbInstanceId, range) =>
+    get(
+      `/api/rds/top-queries?dbInstanceId=${encodeURIComponent(dbInstanceId)}&range=${range}`
+    ),
   listViews: () => get('/api/views'),
   getView: (id) => get(`/api/views/${id}`),
   createView: (payload) => post('/api/views', payload),

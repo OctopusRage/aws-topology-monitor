@@ -103,6 +103,21 @@ app.get('/api/datasources', requireAuth, async (_req, res) => {
   }
 });
 
+// ── RDS Top SQL (Performance Insights) ───────────────────────────────────────
+app.get('/api/rds/top-queries', requireAuth, async (req, res) => {
+  const dbInstanceId = req.query.dbInstanceId;
+  const range = req.query.range || '1h';
+  if (!dbInstanceId) return res.status(400).json({ error: 'dbInstanceId is required' });
+  try {
+    const result = await provider.getRdsTopQueries(dbInstanceId, range);
+    res.json({ source: 'performance-insights', ...result });
+  } catch (err) {
+    // Fall back to sample data (e.g. missing pi:* permission) so the UI renders.
+    const sample = await mockProvider.getRdsTopQueries();
+    res.json({ source: 'sample', error: String(err.message || err), ...sample });
+  }
+});
+
 // ── Saved views (shared) ─────────────────────────────────────────────────────
 app.get('/api/views', requireAuth, (_req, res) => res.json(viewStore.listViews()));
 

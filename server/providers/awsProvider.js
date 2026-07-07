@@ -12,12 +12,16 @@ import {
   OpenSearchClient,
   ListDomainNamesCommand,
 } from '@aws-sdk/client-opensearch';
+import { PIClient, DescribeDimensionKeysCommand } from '@aws-sdk/client-pi';
 import { config } from '../config.js';
 
 const elbv2 = new ElasticLoadBalancingV2Client({ region: config.awsRegion });
 const ec2 = new EC2Client({ region: config.awsRegion });
 const rds = new RDSClient({ region: config.awsRegion });
 const opensearch = new OpenSearchClient({ region: config.awsRegion });
+const pi = new PIClient({ region: config.awsRegion });
+
+const RANGE_SECONDS = { '15m': 900, '1h': 3600, '6h': 21600, '24h': 86400 };
 
 let _accountId = null;
 
@@ -140,6 +144,46 @@ export const awsProvider = {
         status: 'active',
       })),
     };
+  },
+
+  // Top SQL by DB load, from RDS Performance Insights (like the PI dashboard).
+  async getRdsTopQueries(dbInstanceId, range = '1h') {
+    const out = await rds.send(
+      new DescribeDBInstancesCommand({ DBInstanceIdentifier: dbInstanceId })
+    );
+    const db = out.DBInstances?.[0];
+    if (!db) return { enabled: false, reason: 'instance not found' };
+    if (!db.PerformanceInsightsEnabled)
+      return { enabled: false, reason: 'Performance Insights is not enabled on this instance' };
+
+    const seconds = RANGE_SECONDS[range] || 3600;
+    const end = new Date();
+    const start = new Date(end.getTime() - seconds * 1000);
+
+    const res = await pi.send(
+      new DescribeDimensionKeysCommand({
+        ServiceType: 'RDS',
+        Identifier: db.DbiResourceId,
+        StartTime: start,
+        EndTime: end,
+        Metric: 'db.load.avg',
+        GroupBy: {
+          Group: 'db.sql_tokenized',
+          Dimensions: ['db.sql_tokenized.statement', 'db.sql_tokenized.id'],
+          Limit: 10,
+        },
+      })
+    );
+
+    const queries = (res.Keys || [])
+      .map((k) => ({
+        sql: k.Dimensions?.['db.sql_tokenized.statement'] || '(unknown)',
+        id: k.Dimensions?.['db.sql_tokenized.id'],
+        load: Number((k.Total || 0).toFixed(3)),
+      }))
+      .sort((a, b) => b.load - a.load);
+
+    return { enabled: true, engine: db.Engine, queries };
   },
 
   async getTargetGroupTargets(tgArn) {

@@ -64,6 +64,65 @@ function Panel({ panel }) {
   );
 }
 
+function TopSql({ dbInstanceId, range }) {
+  const [tq, setTq] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setTq(null);
+    api
+      .rdsTopQueries(dbInstanceId, range)
+      .then((r) => alive && setTq(r))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [dbInstanceId, range]);
+
+  if (!tq) return <div className="topsql"><div className="node-kicker">TOP SQL BY DB LOAD · loading…</div></div>;
+  const queries = tq.queries || [];
+  const maxLoad = Math.max(0.001, ...queries.map((q) => q.load || 0));
+  const hasCalls = queries.some((q) => q.calls != null);
+
+  return (
+    <div className="topsql">
+      <div className="node-kicker">
+        TOP SQL BY DB LOAD
+        <span className={`source-badge ${tq.source === 'performance-insights' ? 'prometheus' : 'mock'}`}>
+          {tq.source === 'performance-insights' ? 'live · performance insights' : 'sample'}
+        </span>
+      </div>
+      {tq.enabled === false && tq.reason && (
+        <div className="modal-warn">{tq.reason} — showing sample.</div>
+      )}
+      <table className="topsql-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Statement</th>
+            <th className="num">DB load (AAS)</th>
+            {hasCalls && <th className="num">Calls</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {queries.map((q, i) => (
+            <tr key={q.id || i}>
+              <td className="rank">{i + 1}</td>
+              <td className="sql">
+                <code title={q.sql}>{q.sql}</code>
+              </td>
+              <td className="num load">
+                <span className="load-bar" style={{ width: `${(q.load / maxLoad) * 100}%` }} />
+                <span className="load-val">{q.load}</span>
+              </td>
+              {hasCalls && <td className="num">{q.calls != null ? q.calls.toLocaleString() : '—'}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function DatapointMetricsModal({ datapoint, onClose }) {
   const [range, setRange] = useState('1h');
   const [data, setData] = useState(null);
@@ -137,6 +196,10 @@ export default function DatapointMetricsModal({ datapoint, onClose }) {
             <Panel key={p.key} panel={p} />
           ))}
         </div>
+
+        {datapoint.type === 'rds' && datapoint.config?.dbInstanceId && (
+          <TopSql dbInstanceId={datapoint.config.dbInstanceId} range={range} />
+        )}
       </div>
     </div>
   );
