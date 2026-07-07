@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="AWS Topology Monitor" width="100%">
+</p>
+
 # AWS Topology Monitor
 
 Visualize your AWS load-balancer topology on an **n8n-style canvas** and drill
