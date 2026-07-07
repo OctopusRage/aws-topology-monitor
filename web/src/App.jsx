@@ -18,8 +18,10 @@ import UsersModal from './components/UsersModal.jsx';
 import AccountModal from './components/AccountModal.jsx';
 import { datapointNodeTypes } from './components/datapointNode.jsx';
 import { instanceNodeTypes } from './components/instanceNodes.jsx';
+import { standaloneTgNodeTypes } from './components/standaloneTgNode.jsx';
 import AddDataPointModal from './components/AddDataPointModal.jsx';
 import AddInstancesModal from './components/AddInstancesModal.jsx';
+import AddTargetGroupModal from './components/AddTargetGroupModal.jsx';
 import DatapointMetricsModal from './components/DatapointMetricsModal.jsx';
 import { useAuth } from './auth.jsx';
 
@@ -34,6 +36,7 @@ const nodeTypes = {
   ...radialNodeTypes,
   ...datapointNodeTypes,
   ...instanceNodeTypes,
+  ...standaloneTgNodeTypes,
 };
 
 function Dashboard() {
@@ -56,6 +59,9 @@ function Dashboard() {
   const [connections, setConnections] = useState([]);
   const [instanceGroups, setInstanceGroups] = useState([]);
   const [showAddInstances, setShowAddInstances] = useState(false);
+  const [standaloneTGs, setStandaloneTGs] = useState([]); // [{tgArn,name,position}]
+  const [standaloneTgData, setStandaloneTgData] = useState({}); // tgArn -> live tg
+  const [showAddTG, setShowAddTG] = useState(false);
   const [views, setViews] = useState([]);
   const [currentView, setCurrentView] = useState(null); // {id,name,createdBy}
   const [showAddDp, setShowAddDp] = useState(false);
@@ -65,7 +71,23 @@ function Dashboard() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const rf = useRef(null);
 
-  const openMetrics = useCallback((tg) => setActiveTg(tg), []);
+  const openMetrics = useCallback(
+    (tg, lbArn = null, defaultSource = 'cloudwatch') =>
+      setActiveTg({ tg, lbArn, defaultSource }),
+    []
+  );
+
+  const addStandaloneTGs = useCallback((items) => {
+    setStandaloneTGs((prev) => {
+      const seen = new Set(prev.map((s) => s.tgArn));
+      return [...prev, ...items.filter((i) => !seen.has(i.tgArn)).map((i) => ({ ...i, position: null }))];
+    });
+    setShowAddTG(false);
+  }, []);
+
+  const removeStandaloneTG = useCallback((tgArn) => {
+    setStandaloneTGs((prev) => prev.filter((s) => s.tgArn !== tgArn));
+  }, []);
 
   const removeDatapoint = useCallback((id) => {
     setDatapoints((dps) => dps.filter((d) => d.id !== id));
@@ -124,6 +146,11 @@ function Dashboard() {
       setInstanceGroups((gs) =>
         gs.map((g) => (g.id === id ? { ...g, position: node.position } : g))
       );
+    } else if (String(node.id).startsWith('stg:')) {
+      const arn = node.id.slice(4);
+      setStandaloneTGs((gs) =>
+        gs.map((g) => (g.tgArn === arn ? { ...g, position: node.position } : g))
+      );
     }
   }, []);
 
@@ -131,7 +158,8 @@ function Dashboard() {
   // (data point / instance / instance group), so base topology edges are left alone.
   const onConnect = useCallback((params) => {
     if (!params.source || !params.target || params.source === params.target) return;
-    const addable = (id) => id.startsWith('dp:') || id.startsWith('ig:');
+    const addable = (id) =>
+      id.startsWith('dp:') || id.startsWith('ig:') || id.startsWith('stg:');
     if (!addable(params.source) && !addable(params.target)) return;
     setConnections((cs) =>
       cs.some((c) => c.source === params.source && c.target === params.target)
@@ -158,6 +186,7 @@ function Dashboard() {
       setDatapoints([]);
       setConnections([]);
       setInstanceGroups([]);
+      setStandaloneTGs([]);
       return;
     }
     try {
@@ -166,6 +195,7 @@ function Dashboard() {
       setDatapoints(v.data?.datapoints || []);
       setConnections(v.data?.connections || []);
       setInstanceGroups(v.data?.instanceGroups || []);
+      setStandaloneTGs(v.data?.standaloneTargetGroups || []);
       setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy });
     } catch (e) {
       setError(String(e.message || e));
@@ -174,7 +204,16 @@ function Dashboard() {
 
   const saveView = useCallback(async () => {
     try {
-      const data = { datapoints, connections, instanceGroups };
+      const data = {
+        datapoints,
+        connections,
+        instanceGroups,
+        standaloneTargetGroups: standaloneTGs.map(({ tgArn, name, position }) => ({
+          tgArn,
+          name,
+          position,
+        })),
+      };
       if (currentView?.id) {
         await api.updateView(currentView.id, {
           name: currentView.name,
@@ -191,7 +230,7 @@ function Dashboard() {
     } catch (e) {
       setError(String(e.message || e));
     }
-  }, [currentView, selected, datapoints, connections, instanceGroups, loadViewsList]);
+  }, [currentView, selected, datapoints, connections, instanceGroups, standaloneTGs, loadViewsList]);
 
   // Which view is "active" right now — a saved view, or just the base ELB.
   const activeRef = currentView?.id
@@ -266,6 +305,29 @@ function Dashboard() {
     }, 30000);
     return () => clearInterval(id);
   }, [selected]);
+
+  // Standalone target groups: fetch live instances (+ poll so ASG reflects).
+  const refreshStandaloneTGs = useCallback(async () => {
+    const arns = standaloneTGs.map((s) => s.tgArn);
+    if (!arns.length) return;
+    const results = await Promise.all(
+      arns.map((a) => api.getTargetGroup(a).then((d) => [a, d]).catch(() => [a, null]))
+    );
+    setStandaloneTgData((prev) => {
+      const next = {};
+      for (const [a, d] of results) next[a] = d || prev[a] || null;
+      return next;
+    });
+  }, [standaloneTGs]);
+
+  useEffect(() => {
+    refreshStandaloneTGs();
+  }, [refreshStandaloneTGs]);
+  useEffect(() => {
+    if (!standaloneTGs.length) return;
+    const id = setInterval(refreshStandaloneTGs, 30000);
+    return () => clearInterval(id);
+  }, [refreshStandaloneTGs, standaloneTGs.length]);
 
   const graph = useMemo(() => {
     let base;
@@ -369,8 +431,56 @@ function Dashboard() {
       });
     }
 
+    // Standalone target groups (ASG worker pools) — live instances, not wired
+    // to the ELB. Reuse the grid 'server' node for children. Continue the same
+    // left-column cursor (igY) so groups stack without overlapping.
+    const stgNodes = [];
+    for (const s of standaloneTGs) {
+      const tg = standaloneTgData[s.tgArn];
+      if (!tg) continue;
+      const targets = tg.targets || [];
+      const n = targets.length;
+      const cols = Math.min(ICOLS, Math.max(1, n));
+      const rows = Math.ceil(n / cols) || 1;
+      const width = Math.max(IPADX * 2 + cols * IW + (cols - 1) * IGAP, 260);
+      const height = IHEAD + (n ? rows * IH + (rows - 1) * IGAP : 20) + IPADB;
+      const pos = s.position || { x: -490, y: igY };
+      igY += height + 40;
+      const healthy = targets.filter((t) => t.health === 'healthy').length;
+
+      stgNodes.push({
+        id: `stg:${s.tgArn}`,
+        type: 'standaloneTg',
+        position: pos,
+        style: { width, height },
+        data: {
+          tg,
+          healthy,
+          total: n,
+          onOpen: () => openMetrics(tg, tg.lbArn, tg.lbArn ? 'cloudwatch' : 'prometheus'),
+          onRemove: () => removeStandaloneTG(s.tgArn),
+        },
+        draggable: true,
+      });
+      targets.forEach((srv, i) => {
+        stgNodes.push({
+          id: `stg:${s.tgArn}::${srv.id}::${i}`,
+          type: 'server',
+          parentId: `stg:${s.tgArn}`,
+          extent: 'parent',
+          draggable: false,
+          selectable: false,
+          position: {
+            x: IPADX + (i % ICOLS) * (IW + IGAP),
+            y: IHEAD + Math.floor(i / ICOLS) * (IH + IGAP),
+          },
+          data: { srv },
+        });
+      });
+    }
+
     return {
-      nodes: [...base.nodes, ...dpNodes, ...igNodes],
+      nodes: [...base.nodes, ...dpNodes, ...igNodes, ...stgNodes],
       // base topology edges aren't user-deletable; only manual connections are
       edges: [...base.edges.map((e) => ({ ...e, deletable: false })), ...connEdges],
     };
@@ -383,6 +493,9 @@ function Dashboard() {
     removeDatapoint,
     instanceGroups,
     removeInstanceGroup,
+    standaloneTGs,
+    standaloneTgData,
+    removeStandaloneTG,
   ]);
 
   useEffect(() => {
@@ -438,8 +551,11 @@ function Dashboard() {
   useEffect(() => {
     setNodes((nds) =>
       nds.map((n) => {
-        if (['datapoint', 'dpGroup', 'instanceGroup', 'instanceNode'].includes(n.type))
-          return n; // never dim data points / instances
+        if (
+          ['datapoint', 'dpGroup', 'instanceGroup', 'instanceNode', 'standaloneTg'].includes(n.type) ||
+          String(n.id).startsWith('stg:')
+        )
+          return n; // never dim data points / instances / standalone TGs
         const cls = !hoveredTg
           ? undefined
           : n.id === hoveredTg ||
@@ -611,6 +727,9 @@ function Dashboard() {
             <button className="view-action" onClick={() => setShowAddInstances(true)}>
               ＋ Instances
             </button>
+            <button className="view-action" onClick={() => setShowAddTG(true)}>
+              ＋ Target group
+            </button>
             <button className="view-action save" onClick={saveView}>
               💾 {currentView?.id ? 'Save' : 'Save as…'}
             </button>
@@ -661,8 +780,9 @@ function Dashboard() {
 
       {activeTg && (
         <MetricsModal
-          targetGroup={activeTg}
-          lbArn={selected}
+          targetGroup={activeTg.tg}
+          lbArn={activeTg.lbArn ?? selected}
+          defaultSource={activeTg.defaultSource}
           onClose={() => setActiveTg(null)}
         />
       )}
@@ -677,6 +797,13 @@ function Dashboard() {
           groups={instanceGroups}
           onAdd={addInstances}
           onClose={() => setShowAddInstances(false)}
+        />
+      )}
+      {showAddTG && (
+        <AddTargetGroupModal
+          existing={standaloneTGs}
+          onAdd={addStandaloneTGs}
+          onClose={() => setShowAddTG(false)}
         />
       )}
       {activeDp && (

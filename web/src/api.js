@@ -58,6 +58,8 @@ export const api = {
   // data points + saved views
   listDatasources: () => get('/api/datasources'),
   listEc2: () => get('/api/ec2/instances'),
+  listTargetGroups: () => get('/api/target-groups'),
+  getTargetGroup: (tgArn) => get(`/api/target-group?tgArn=${encodeURIComponent(tgArn)}`),
   datapointMetrics: (datapoint, range) =>
     post('/api/metrics/datapoint', { datapoint, range }),
   rdsTopQueries: (dbInstanceId, range) =>

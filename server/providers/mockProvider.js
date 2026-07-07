@@ -135,6 +135,31 @@ export const mockProvider = {
     }));
   },
 
+  async listTargetGroups() {
+    const out = [];
+    for (const lb of LOAD_BALANCERS) {
+      for (const tg of lb.targetGroups) {
+        out.push({
+          arn: tg.arn,
+          name: tg.name,
+          protocol: tg.protocol,
+          port: tg.port,
+          targetType: tg.targetType,
+          lbArn: lb.arn,
+        });
+      }
+    }
+    return out;
+  },
+
+  async getStandaloneTargetGroup(tgArn) {
+    for (const lb of LOAD_BALANCERS) {
+      const tg = lb.targetGroups.find((t) => t.arn === tgArn);
+      if (tg) return { ...tg, lbArn: lb.arn };
+    }
+    return null;
+  },
+
   // Resolve a target group ARN to its member instances (used by metrics layer).
   async getTargetGroupTargets(tgArn) {
     for (const lb of LOAD_BALANCERS) {

@@ -8,9 +8,9 @@ const SOURCES = [
   { key: 'prometheus', label: 'node_exporter' },
 ];
 
-export default function MetricsModal({ targetGroup, lbArn, onClose }) {
+export default function MetricsModal({ targetGroup, lbArn, defaultSource, onClose }) {
   const [range, setRange] = useState('1h');
-  const [source, setSource] = useState('cloudwatch');
+  const [source, setSource] = useState(defaultSource || 'cloudwatch');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);

@@ -112,6 +112,28 @@ app.get('/api/ec2/instances', requireAuth, async (_req, res) => {
   }
 });
 
+// All target groups (for the "add target group" picker).
+app.get('/api/target-groups', requireAuth, async (_req, res) => {
+  try {
+    res.json(await provider.listTargetGroups());
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// A single target group with its LIVE registered instances (reflects ASG).
+app.get('/api/target-group', requireAuth, async (req, res) => {
+  const tgArn = req.query.tgArn;
+  if (!tgArn) return res.status(400).json({ error: 'tgArn is required' });
+  try {
+    const tg = await provider.getStandaloneTargetGroup(tgArn);
+    if (!tg) return res.status(404).json({ error: 'target group not found' });
+    res.json(tg);
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 // ── RDS Top SQL (Performance Insights) ───────────────────────────────────────
 app.get('/api/rds/top-queries', requireAuth, async (req, res) => {
   const dbInstanceId = req.query.dbInstanceId;

@@ -328,6 +328,23 @@ html, body, #root {
 }
 .inst-meta.subtle { opacity: .7; }
 
+/* ---------- Standalone target group ---------- */
+.stg-node {
+  position: relative; width: 100%; height: 100%;
+  background: rgba(45, 212, 191, 0.05);
+  border: 1.5px solid rgba(45, 212, 191, 0.4);
+  border-radius: 14px;
+}
+.stg-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  padding: 12px 14px; border-bottom: 1px dashed var(--node-border); cursor: pointer;
+  border-radius: 14px 14px 0 0; transition: background .15s;
+}
+.stg-header:hover { background: rgba(45, 212, 191, 0.08); }
+.stg-header-left { display: flex; align-items: flex-start; gap: 10px; min-width: 0; flex: 1; }
+.stg-icon { background: rgba(45, 212, 191, .16); color: #2dd4bf; width: 34px; height: 34px; font-size: 18px; flex-shrink: 0; }
+.stg-remove { top: -8px; right: -8px; }
+
 /* ---------- Add instances modal ---------- */
 .ins-modal { width: min(560px, 96vw); }
 .ins-form { display: flex; flex-direction: column; gap: 14px; padding: 20px 24px 24px; }

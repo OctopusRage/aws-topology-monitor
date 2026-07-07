@@ -226,6 +226,30 @@ export const awsProvider = {
     return instances.sort((a, b) => a.name.localeCompare(b.name));
   },
 
+  // All target groups in the account (for the "add target group" picker).
+  async listTargetGroups() {
+    const out = await elbv2.send(new DescribeTargetGroupsCommand({}));
+    return (out.TargetGroups || []).map((tg) => ({
+      arn: tg.TargetGroupArn,
+      name: tg.TargetGroupName,
+      protocol: tg.Protocol,
+      port: tg.Port,
+      targetType: tg.TargetType,
+      lbArn: tg.LoadBalancerArns?.[0] || null,
+    }));
+  },
+
+  // A single target group with its LIVE registered instances (reflects ASG).
+  async getStandaloneTargetGroup(tgArn) {
+    const meta = await elbv2.send(
+      new DescribeTargetGroupsCommand({ TargetGroupArns: [tgArn] })
+    );
+    const tg = meta.TargetGroups?.[0];
+    if (!tg) return null;
+    const built = await buildTargetGroup(tg);
+    return { ...built, lbArn: tg.LoadBalancerArns?.[0] || null };
+  },
+
   async getTargetGroupTargets(tgArn) {
     const health = await elbv2.send(
       new DescribeTargetHealthCommand({ TargetGroupArn: tgArn })
