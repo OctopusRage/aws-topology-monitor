@@ -257,6 +257,16 @@ function Dashboard() {
       .finally(() => setLoading(false));
   }, [selected]);
 
+  // Silently re-fetch topology every 30s so ASG scaling (instances joining/
+  // leaving target groups) reflects on the canvas without a reload.
+  useEffect(() => {
+    if (!selected) return;
+    const id = setInterval(() => {
+      api.topology(selected).then(setTopology).catch(() => {});
+    }, 30000);
+    return () => clearInterval(id);
+  }, [selected]);
+
   const graph = useMemo(() => {
     let base;
     if (viewMode === 'neural') base = buildNeuralGraph(topology, openMetrics);
@@ -380,15 +390,34 @@ function Dashboard() {
     setEdges(graph.edges);
   }, [graph, setNodes, setEdges]);
 
-  // Re-center after the fresh canvas has mounted + measured the new nodes.
+  // Fit the view once per selection/mode (when the graph first populates), and
+  // when the user adds data points / instances — but NOT on background topology
+  // refreshes, so ASG changes update the canvas without stealing the user's
+  // pan/zoom.
+  const fittedRef = useRef(false);
   useEffect(() => {
-    if (graph.nodes.length === 0) return;
+    fittedRef.current = false;
+  }, [selected, viewMode]);
+
+  useEffect(() => {
+    if (graph.nodes.length === 0 || fittedRef.current) return;
+    fittedRef.current = true;
     const id = setTimeout(
       () => rf.current && rf.current.fitView({ padding: 0.18, duration: 300 }),
       220
     );
     return () => clearTimeout(id);
-  }, [viewMode, selected, graph.nodes.length]);
+  }, [graph.nodes.length, viewMode]);
+
+  useEffect(() => {
+    if (graph.nodes.length === 0) return;
+    const id = setTimeout(
+      () => rf.current && rf.current.fitView({ padding: 0.18, duration: 300 }),
+      120
+    );
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datapoints.length, instanceGroups.length]);
 
   // ── Hover highlight ──
   const onNodeEnter = useCallback((_, node) => {
@@ -533,6 +562,9 @@ function Dashboard() {
             servers
           </div>
           <div className="summary-item dns">{selectedElb.dnsName}</div>
+          <div className="summary-item live-badge" title="Topology auto-refreshes every 30s (reflects ASG scaling)">
+            <span className="live-dot" /> live
+          </div>
           {datapoints.length > 0 && (
             <div className="summary-item">
               <b>{datapoints.length}</b> data point{datapoints.length > 1 ? 's' : ''}
