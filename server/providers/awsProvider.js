@@ -7,10 +7,19 @@ import {
   DescribeTargetHealthCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import { EC2Client, DescribeInstancesCommand } from '@aws-sdk/client-ec2';
+import { RDSClient, DescribeDBInstancesCommand } from '@aws-sdk/client-rds';
+import {
+  OpenSearchClient,
+  ListDomainNamesCommand,
+} from '@aws-sdk/client-opensearch';
 import { config } from '../config.js';
 
 const elbv2 = new ElasticLoadBalancingV2Client({ region: config.awsRegion });
 const ec2 = new EC2Client({ region: config.awsRegion });
+const rds = new RDSClient({ region: config.awsRegion });
+const opensearch = new OpenSearchClient({ region: config.awsRegion });
+
+let _accountId = null;
 
 function mapLb(lb) {
   return {
@@ -101,6 +110,36 @@ export const awsProvider = {
     const tgs = await targetGroupsForLb(lbArn);
     const targetGroups = await Promise.all(tgs.map(buildTargetGroup));
     return { loadBalancer: mapLb(raw), targetGroups };
+  },
+
+  // Account id is embedded in every ELB ARN — cache it (needed for the
+  // OpenSearch CloudWatch ClientId dimension).
+  async getAccountId() {
+    if (_accountId) return _accountId;
+    const out = await elbv2.send(new DescribeLoadBalancersCommand({}));
+    _accountId = out.LoadBalancers?.[0]?.LoadBalancerArn?.split(':')[4] || null;
+    return _accountId;
+  },
+
+  // Discover RDS instances + OpenSearch domains to offer as data points.
+  async listDataSources() {
+    const [rdsOut, esOut] = await Promise.all([
+      rds.send(new DescribeDBInstancesCommand({})).catch(() => ({ DBInstances: [] })),
+      opensearch.send(new ListDomainNamesCommand({})).catch(() => ({ DomainNames: [] })),
+    ]);
+    return {
+      rds: (rdsOut.DBInstances || []).map((d) => ({
+        id: d.DBInstanceIdentifier,
+        engine: d.Engine,
+        class: d.DBInstanceClass,
+        status: d.DBInstanceStatus,
+      })),
+      opensearch: (esOut.DomainNames || []).map((d) => ({
+        domain: d.DomainName,
+        engine: d.EngineType,
+        status: 'active',
+      })),
+    };
   },
 
   async getTargetGroupTargets(tgArn) {

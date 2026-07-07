@@ -85,6 +85,36 @@ function mockMetricSet(seconds, step) {
   };
 }
 
+// Metrics for a single node_exporter instance (e.g. a self-hosted ClickHouse
+// box). `instance` is the Prometheus `instance` label, e.g. "10.0.1.5:9100".
+export async function getInstanceSeries(instance, range = '1h') {
+  const preset = RANGE_PRESETS[range] || RANGE_PRESETS['1h'];
+  const { seconds, step } = preset;
+
+  if (config.mockMetrics || !instance) {
+    const m = mockMetricSet(seconds, step);
+    return { source: 'mock', series: { cpu: m.cpu, ram: m.ram, storage: m.storage } };
+  }
+
+  const sel = `instance="${String(instance).replace(/\./g, '\\\\.')}"`;
+  try {
+    const q = queries(sel);
+    const [cpu, ram, storage] = await Promise.all([
+      promRangeQuery(q.cpu, seconds, step),
+      promRangeQuery(q.ram, seconds, step),
+      promRangeQuery(q.storage, seconds, step),
+    ]);
+    return { source: 'prometheus', series: { cpu, ram, storage } };
+  } catch (err) {
+    const m = mockMetricSet(seconds, step);
+    return {
+      source: 'mock-fallback',
+      error: String(err.message || err),
+      series: { cpu: m.cpu, ram: m.ram, storage: m.storage },
+    };
+  }
+}
+
 export async function getTargetGroupMetrics(targets, range = '1h') {
   const preset = RANGE_PRESETS[range] || RANGE_PRESETS['1h'];
   const { seconds, step } = preset;

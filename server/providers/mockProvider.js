@@ -85,6 +85,25 @@ export const mockProvider = {
     return { loadBalancer, targetGroups };
   },
 
+  async getAccountId() {
+    return '123456789012';
+  },
+
+  // Discoverable AWS resources to drop onto the canvas as data points.
+  async listDataSources() {
+    return {
+      rds: [
+        { id: 'qismo-prod-mysql', engine: 'mysql', class: 'db.r6g.xlarge', status: 'available' },
+        { id: 'billing-postgres', engine: 'postgres', class: 'db.r6g.large', status: 'available' },
+        { id: 'analytics-aurora', engine: 'aurora-mysql', class: 'db.r6g.2xlarge', status: 'available' },
+      ],
+      opensearch: [
+        { domain: 'logs-prod', engine: 'OpenSearch_2.11', status: 'active' },
+        { domain: 'search-catalog', engine: 'OpenSearch_2.11', status: 'active' },
+      ],
+    };
+  },
+
   // Resolve a target group ARN to its member instances (used by metrics layer).
   async getTargetGroupTargets(tgArn) {
     for (const lb of LOAD_BALANCERS) {

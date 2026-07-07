@@ -4,8 +4,10 @@ import { config } from './config.js';
 import { mockProvider } from './providers/mockProvider.js';
 import { getTargetGroupMetrics } from './prometheus.js';
 import { getRequestCount } from './cloudwatch.js';
+import { getDatapointMetrics } from './datapoints.js';
 import { makeAuthMiddleware } from './auth.js';
 import * as users from './users.js'; // also triggers db init + admin seed
+import * as viewStore from './views.js';
 
 const { requireAuth, requireAdmin } = makeAuthMiddleware(users.getUserByToken);
 
@@ -83,6 +85,66 @@ app.delete('/api/users/:id', requireAuth, requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'cannot delete the last admin' });
   users.deleteUser(id);
   res.json({ ok: true });
+});
+
+// ── Discoverable data sources (RDS / OpenSearch) ─────────────────────────────
+app.get('/api/datasources', requireAuth, async (_req, res) => {
+  try {
+    res.json(await provider.listDataSources());
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// ── Saved views (shared) ─────────────────────────────────────────────────────
+app.get('/api/views', requireAuth, (_req, res) => res.json(viewStore.listViews()));
+
+app.get('/api/views/:id', requireAuth, (req, res) => {
+  const v = viewStore.getView(Number(req.params.id));
+  if (!v) return res.status(404).json({ error: 'view not found' });
+  res.json(v);
+});
+
+app.post('/api/views', requireAuth, (req, res) => {
+  try {
+    res.status(201).json(viewStore.createView(req.user, req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: String(err.message || err) });
+  }
+});
+
+app.put('/api/views/:id', requireAuth, (req, res) => {
+  try {
+    res.json(viewStore.updateView(Number(req.params.id), req.user, req.body || {}));
+  } catch (err) {
+    const code = /not found/.test(err.message) ? 404 : 403;
+    res.status(code).json({ error: String(err.message || err) });
+  }
+});
+
+app.delete('/api/views/:id', requireAuth, (req, res) => {
+  try {
+    viewStore.deleteView(Number(req.params.id), req.user);
+    res.json({ ok: true });
+  } catch (err) {
+    const code = /not found/.test(err.message) ? 404 : 403;
+    res.status(code).json({ error: String(err.message || err) });
+  }
+});
+
+// ── Data-point resource metrics (RDS/OpenSearch via CloudWatch, else Prometheus)
+app.post('/api/metrics/datapoint', requireAuth, async (req, res) => {
+  const { datapoint, range = '1h' } = req.body || {};
+  if (!datapoint?.type) return res.status(400).json({ error: 'datapoint is required' });
+  try {
+    // OpenSearch needs the account id for the CloudWatch ClientId dimension.
+    if (datapoint.type === 'opensearch' && !datapoint.config?.accountId) {
+      datapoint.config = { ...datapoint.config, accountId: await provider.getAccountId() };
+    }
+    res.json(await getDatapointMetrics(datapoint, range));
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
 });
 
 // ── Topology + metrics (any authenticated user) ──────────────────────────────

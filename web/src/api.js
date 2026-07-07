@@ -30,6 +30,7 @@ async function req(path, opts = {}) {
 
 const get = (p) => req(p);
 const post = (p, body) => req(p, { method: 'POST', body: JSON.stringify(body) });
+const put = (p, body) => req(p, { method: 'PUT', body: JSON.stringify(body) });
 const del = (p) => req(p, { method: 'DELETE' });
 
 export const api = {
@@ -53,4 +54,13 @@ export const api = {
       `/api/metrics/target-group?tgArn=${encodeURIComponent(tgArn)}&range=${range}` +
         (lbArn ? `&lbArn=${encodeURIComponent(lbArn)}` : '')
     ),
+  // data points + saved views
+  listDatasources: () => get('/api/datasources'),
+  datapointMetrics: (datapoint, range) =>
+    post('/api/metrics/datapoint', { datapoint, range }),
+  listViews: () => get('/api/views'),
+  getView: (id) => get(`/api/views/${id}`),
+  createView: (payload) => post('/api/views', payload),
+  updateView: (id, payload) => put(`/api/views/${id}`, payload),
+  deleteView: (id) => del(`/api/views/${id}`),
 };

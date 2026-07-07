@@ -75,3 +75,46 @@ export async function getRequestCount(lbArn, tgArn, range = '1h') {
     v: Number((values[i] / period).toFixed(2)), // Sum/period => req/s
   }));
 }
+
+// Generic single-metric range query. `dimensions` is [{Name,Value}]; `transform`
+// optionally maps each raw value (e.g. bytes → GB). Returns [{t, v}] ascending.
+export async function getMetricSeries({
+  namespace,
+  metricName,
+  dimensions,
+  stat = 'Average',
+  range = '1h',
+  transform,
+}) {
+  const preset = RANGE[range] || RANGE['1h'];
+  const { period, seconds } = preset;
+  const end = new Date();
+  const start = new Date(end.getTime() - seconds * 1000);
+
+  const out = await cw().send(
+    new GetMetricDataCommand({
+      StartTime: start,
+      EndTime: end,
+      ScanBy: 'TimestampAscending',
+      MetricDataQueries: [
+        {
+          Id: 'm',
+          ReturnData: true,
+          MetricStat: {
+            Metric: { Namespace: namespace, MetricName: metricName, Dimensions: dimensions },
+            Period: period,
+            Stat: stat,
+          },
+        },
+      ],
+    })
+  );
+
+  const r = out.MetricDataResults?.[0];
+  const times = r?.Timestamps || [];
+  const values = r?.Values || [];
+  return times.map((t, i) => ({
+    t: t instanceof Date ? t.getTime() : new Date(t).getTime(),
+    v: Number((transform ? transform(values[i]) : values[i]).toFixed(2)),
+  }));
+}

@@ -16,6 +16,9 @@ import MetricsModal from './components/MetricsModal.jsx';
 import Login from './components/Login.jsx';
 import UsersModal from './components/UsersModal.jsx';
 import AccountModal from './components/AccountModal.jsx';
+import { datapointNodeTypes } from './components/datapointNode.jsx';
+import AddDataPointModal from './components/AddDataPointModal.jsx';
+import DatapointMetricsModal from './components/DatapointMetricsModal.jsx';
 import { useAuth } from './auth.jsx';
 
 const TG_TYPES = ['targetGroup', 'tgN', 'tgRadial'];
@@ -23,7 +26,12 @@ const SRV_TYPES = ['server', 'serverN'];
 const ELB_TYPES = ['elb', 'elbN', 'elbRadial'];
 
 // stable merged map so React Flow doesn't warn / rebuild
-const nodeTypes = { ...gridNodeTypes, ...neuralNodeTypes, ...radialNodeTypes };
+const nodeTypes = {
+  ...gridNodeTypes,
+  ...neuralNodeTypes,
+  ...radialNodeTypes,
+  ...datapointNodeTypes,
+};
 
 function Dashboard() {
   const { user, logout } = useAuth();
@@ -38,13 +46,110 @@ function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTg, setActiveTg] = useState(null);
-  const [viewMode, setViewMode] = useState('neural'); // 'neural' | 'grid'
+  const [viewMode, setViewMode] = useState('neural'); // 'neural' | 'radial' | 'grid'
+
+  // data points + saved views
+  const [datapoints, setDatapoints] = useState([]);
+  const [connections, setConnections] = useState([]);
+  const [views, setViews] = useState([]);
+  const [currentView, setCurrentView] = useState(null); // {id,name,createdBy}
+  const [showAddDp, setShowAddDp] = useState(false);
+  const [activeDp, setActiveDp] = useState(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const rf = useRef(null);
 
   const openMetrics = useCallback((tg) => setActiveTg(tg), []);
+
+  const removeDatapoint = useCallback((id) => {
+    setDatapoints((dps) => dps.filter((d) => d.id !== id));
+    setConnections((cs) =>
+      cs.filter((c) => c.source !== `dp:${id}` && c.target !== `dp:${id}`)
+    );
+  }, []);
+
+  const addDatapoint = useCallback((dp) => {
+    setDatapoints((prev) => [
+      ...prev,
+      { ...dp, position: dp.position || { x: -440, y: -240 + prev.length * 110 } },
+    ]);
+    setShowAddDp(false);
+  }, []);
+
+  // Persist a data point's dragged position so canvas rebuilds don't reset it.
+  const onNodeDragStop = useCallback((_, node) => {
+    if (String(node.id).startsWith('dp:')) {
+      const id = node.id.slice(3);
+      // dragging a data point pins it so it leaves the auto-group
+      setDatapoints((dps) =>
+        dps.map((d) =>
+          d.id === id ? { ...d, position: node.position, pinned: true } : d
+        )
+      );
+    }
+  }, []);
+
+  // Optional manual connection (only when a data point is one of the ends).
+  const onConnect = useCallback((params) => {
+    if (!params.source || !params.target) return;
+    if (!params.source.startsWith('dp:') && !params.target.startsWith('dp:')) return;
+    setConnections((cs) =>
+      cs.some((c) => c.source === params.source && c.target === params.target)
+        ? cs
+        : [...cs, { source: params.source, target: params.target }]
+    );
+  }, []);
+
+  // ── saved views ──
+  const loadViewsList = useCallback(
+    () => api.listViews().then(setViews).catch(() => {}),
+    []
+  );
+
+  const loadView = useCallback(async (id) => {
+    if (!id) {
+      setCurrentView(null);
+      setDatapoints([]);
+      setConnections([]);
+      return;
+    }
+    try {
+      const v = await api.getView(Number(id));
+      setSelected(v.baseLbArn);
+      setDatapoints(v.data?.datapoints || []);
+      setConnections(v.data?.connections || []);
+      setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy });
+    } catch (e) {
+      setError(String(e.message || e));
+    }
+  }, []);
+
+  const saveView = useCallback(async () => {
+    try {
+      const data = { datapoints, connections };
+      if (currentView?.id) {
+        await api.updateView(currentView.id, {
+          name: currentView.name,
+          baseLbArn: selected,
+          data,
+        });
+      } else {
+        const name = window.prompt('Save this view as:', 'My view');
+        if (!name) return;
+        const created = await api.createView({ name, baseLbArn: selected, data });
+        setCurrentView({ id: created.id, name: created.name, createdBy: created.createdBy });
+      }
+      await loadViewsList();
+    } catch (e) {
+      setError(String(e.message || e));
+    }
+  }, [currentView, selected, datapoints, connections, loadViewsList]);
+
+  // load saved views on mount
+  useEffect(() => {
+    loadViewsList();
+  }, [loadViewsList]);
 
   // load ELB list + health on mount
   useEffect(() => {
@@ -71,10 +176,64 @@ function Dashboard() {
   }, [selected]);
 
   const graph = useMemo(() => {
-    if (viewMode === 'neural') return buildNeuralGraph(topology, openMetrics);
-    if (viewMode === 'radial') return buildRadialGraph(topology, openMetrics);
-    return buildGraph(topology, openMetrics);
-  }, [topology, openMetrics, viewMode]);
+    let base;
+    if (viewMode === 'neural') base = buildNeuralGraph(topology, openMetrics);
+    else if (viewMode === 'radial') base = buildRadialGraph(topology, openMetrics);
+    else base = buildGraph(topology, openMetrics);
+
+    // Data points auto-arrange into a labeled group; ones the user drags out
+    // become "pinned" and keep their own position outside the group.
+    const DP_COLS = 2, CW = 206, CH = 74, GX = -470, GY = -250, PAD = 16, HEAD = 28;
+    const autoCount = datapoints.filter((d) => !d.pinned).length;
+    const dpNodes = [];
+    if (autoCount > 0) {
+      const cols = Math.min(DP_COLS, autoCount);
+      const rows = Math.ceil(autoCount / DP_COLS);
+      dpNodes.push({
+        id: 'dp-group',
+        type: 'dpGroup',
+        position: { x: GX - PAD, y: GY - HEAD },
+        style: {
+          width: cols * 190 + (cols - 1) * 16 + PAD * 2,
+          height: rows * 58 + (rows - 1) * 16 + HEAD + PAD,
+        },
+        className: 'dp-group-node',
+        draggable: false,
+        selectable: false,
+        data: {},
+      });
+    }
+    let ai = 0;
+    for (const dp of datapoints) {
+      let position;
+      if (dp.pinned && dp.position) {
+        position = dp.position;
+      } else {
+        position = { x: GX + (ai % DP_COLS) * CW, y: GY + Math.floor(ai / DP_COLS) * CH };
+        ai++;
+      }
+      dpNodes.push({
+        id: `dp:${dp.id}`,
+        type: 'datapoint',
+        position,
+        data: { dp, onOpen: () => setActiveDp(dp), onRemove: () => removeDatapoint(dp.id) },
+        draggable: true,
+      });
+    }
+    const connEdges = connections.map((c, i) => ({
+      id: `conn:${i}:${c.source}->${c.target}`,
+      source: c.source,
+      target: c.target,
+      type: 'default',
+      className: 'dp-conn',
+      style: { stroke: '#8a8fa3', strokeWidth: 1.4, strokeDasharray: '5 5', opacity: 0.5 },
+    }));
+
+    return {
+      nodes: [...base.nodes, ...dpNodes],
+      edges: [...base.edges, ...connEdges],
+    };
+  }, [topology, openMetrics, viewMode, datapoints, connections, removeDatapoint]);
 
   useEffect(() => {
     setNodes(graph.nodes);
@@ -110,6 +269,7 @@ function Dashboard() {
   useEffect(() => {
     setNodes((nds) =>
       nds.map((n) => {
+        if (n.type === 'datapoint' || n.type === 'dpGroup') return n; // never dim data points
         const cls = !hoveredTg
           ? undefined
           : n.id === hoveredTg ||
@@ -226,8 +386,32 @@ function Dashboard() {
             servers
           </div>
           <div className="summary-item dns">{selectedElb.dnsName}</div>
-          <div className="summary-hint">
-            Click a target group {viewMode === 'grid' ? 'header' : 'node'} to view metrics →
+          {datapoints.length > 0 && (
+            <div className="summary-item">
+              <b>{datapoints.length}</b> data point{datapoints.length > 1 ? 's' : ''}
+            </div>
+          )}
+
+          <div className="views-bar">
+            <select
+              className="views-select"
+              value={currentView?.id || ''}
+              onChange={(e) => loadView(e.target.value)}
+              title="Saved views (shared)"
+            >
+              <option value="">— Base view —</option>
+              {views.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name} · {v.createdByName || 'unknown'}
+                </option>
+              ))}
+            </select>
+            <button className="view-action" onClick={() => setShowAddDp(true)}>
+              ＋ Data point
+            </button>
+            <button className="view-action save" onClick={saveView}>
+              💾 {currentView?.id ? 'Save' : 'Save as…'}
+            </button>
           </div>
         </div>
       )}
@@ -245,6 +429,8 @@ function Dashboard() {
           onEdgesChange={onEdgesChange}
           onNodeMouseEnter={onNodeEnter}
           onNodeMouseLeave={onNodeLeave}
+          onNodeDragStop={onNodeDragStop}
+          onConnect={onConnect}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.2 }}
@@ -280,6 +466,12 @@ function Dashboard() {
 
       {showUsers && <UsersModal onClose={() => setShowUsers(false)} />}
       {showAccount && <AccountModal onClose={() => setShowAccount(false)} />}
+      {showAddDp && (
+        <AddDataPointModal onAdd={addDatapoint} onClose={() => setShowAddDp(false)} />
+      )}
+      {activeDp && (
+        <DatapointMetricsModal datapoint={activeDp} onClose={() => setActiveDp(null)} />
+      )}
     </div>
   );
 }

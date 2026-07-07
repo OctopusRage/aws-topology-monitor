@@ -220,6 +220,81 @@ html, body, #root {
 }
 .react-flow__renderer { background: var(--bg); }
 
+/* ---------- Views bar ---------- */
+.views-bar { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.views-select {
+  background: var(--node); border: 1px solid var(--node-border); color: var(--text);
+  border-radius: 8px; padding: 7px 10px; font-size: 12px; outline: none; max-width: 260px;
+}
+.views-select:focus { border-color: var(--accent-2); }
+.view-action {
+  background: var(--node); border: 1px solid var(--node-border); color: var(--text);
+  border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+.view-action:hover { background: var(--panel-2); border-color: var(--accent-2); }
+.view-action.save:hover { border-color: var(--green); }
+
+/* ---------- Data-point node ---------- */
+.dp-node {
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  width: 190px; padding: 10px 12px;
+  background: var(--node); border: 1.5px solid var(--node-border);
+  border-radius: 12px; cursor: pointer;
+  transition: transform .12s;
+}
+.dp-node:hover { transform: translateY(-1px); }
+.dp-icon {
+  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 18px;
+}
+.dp-body { min-width: 0; }
+.dp-kicker { font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.dp-label { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dp-remove {
+  position: absolute; top: -8px; right: -8px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--node-border); color: var(--muted); border: 1px solid var(--bg);
+  font-size: 11px; cursor: pointer; display: none; place-items: center; line-height: 1;
+}
+.dp-node:hover .dp-remove { display: grid; }
+.dp-remove:hover { background: var(--red); color: #fff; }
+.dp-handle { width: 7px; height: 7px; background: var(--muted); border: 2px solid var(--bg); }
+
+/* auto-group container behind the data points */
+.react-flow__node.dp-group-node { pointer-events: none; z-index: 0; }
+.dp-group {
+  width: 100%; height: 100%;
+  border: 1.5px dashed var(--node-border);
+  border-radius: 14px;
+  background: rgba(123, 108, 255, 0.05);
+}
+.dp-group-label {
+  position: absolute; top: 8px; left: 12px;
+  font-size: 9px; letter-spacing: .08em; font-weight: 700;
+  text-transform: uppercase; color: var(--muted);
+}
+.react-flow__edge.dp-conn .react-flow__edge-path { stroke-dasharray: 5 5; }
+
+/* ---------- Add data point modal ---------- */
+.dp-modal { width: min(460px, 94vw); }
+.dp-form { display: flex; flex-direction: column; gap: 14px; padding: 20px 24px 24px; }
+.dp-type-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.dp-type {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: var(--node); border: 1.5px solid var(--node-border); color: var(--text);
+  border-radius: 10px; padding: 12px 6px; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.dp-type:hover { background: var(--panel-2); }
+.dp-type.active { background: var(--panel-2); }
+.dp-type-icon { font-size: 20px; }
+.dp-form select, .dp-form input {
+  background: var(--node); border: 1px solid var(--node-border); border-radius: 8px;
+  padding: 10px 12px; color: var(--text); font-size: 13px; outline: none;
+}
+.dp-form select:focus, .dp-form input:focus { border-color: var(--accent-2); }
+
 /* ---------- Hover highlight ---------- */
 .react-flow__node { transition: opacity .16s ease, filter .16s ease; }
 .react-flow__node.dimmed { opacity: 0.13; filter: grayscale(0.3); }
