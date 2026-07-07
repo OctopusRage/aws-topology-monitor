@@ -1,9 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
 import { DP_TYPES } from './datapointNode.jsx';
 import MetricPanel from './MetricPanel.jsx';
 
 const RANGES = ['15m', '1h', '6h', '24h'];
+const SOURCES = [
+  { key: 'cloudwatch', label: 'CloudWatch' },
+  { key: 'prometheus', label: 'node_exporter' },
+];
 
 function TopSql({ dbInstanceId, range }) {
   const [tq, setTq] = useState(null);
@@ -66,24 +70,44 @@ function TopSql({ dbInstanceId, range }) {
 
 export default function DatapointMetricsModal({ datapoint, onClose }) {
   const [range, setRange] = useState('1h');
+  // EC2 instances can be viewed via CloudWatch or node_exporter (privateIp:9100)
+  const supportsToggle = datapoint.type === 'ec2';
+  const [source, setSource] = useState(datapoint.source || 'cloudwatch');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const meta = DP_TYPES[datapoint.type] || DP_TYPES.custom;
 
+  // node_exporter target is derived from the instance's private IP.
+  const effectiveDp = useMemo(
+    () => ({
+      ...datapoint,
+      source,
+      config: {
+        ...datapoint.config,
+        instance:
+          source === 'prometheus' && datapoint.config?.privateIp
+            ? `${datapoint.config.privateIp}:9100`
+            : datapoint.config?.instance,
+      },
+    }),
+    [datapoint, source]
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setData(await api.datapointMetrics(datapoint, range));
+      setData(await api.datapointMetrics(effectiveDp, range));
     } catch (e) {
       setError(String(e.message || e));
     } finally {
       setLoading(false);
     }
-  }, [datapoint, range]);
+  }, [effectiveDp, range]);
 
   useEffect(() => {
+    setData(null);
     load();
   }, [load]);
   useEffect(() => {
@@ -104,18 +128,31 @@ export default function DatapointMetricsModal({ datapoint, onClose }) {
               {datapoint.config?.dbInstanceId ||
                 datapoint.config?.domainName ||
                 datapoint.config?.instance}
-              {data && (
-                <span className={`source-badge ${data.source}`}>
-                  {data.source === 'cloudwatch'
-                    ? 'live · cloudwatch'
-                    : data.source === 'prometheus'
-                    ? 'live · prometheus'
-                    : data.source}
-                </span>
-              )}
+              {data &&
+                (() => {
+                  const live = data.source === 'cloudwatch' || data.source === 'prometheus';
+                  return (
+                    <span className={`source-badge ${live ? data.source : 'mock'}`}>
+                      {live ? `live · ${data.source}` : 'sample'}
+                    </span>
+                  );
+                })()}
             </div>
           </div>
           <div className="modal-actions">
+            {supportsToggle && (
+              <div className="range-switch source-switch">
+                {SOURCES.map((s) => (
+                  <button
+                    key={s.key}
+                    className={s.key === source ? 'active' : ''}
+                    onClick={() => setSource(s.key)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="range-switch">
               {RANGES.map((r) => (
                 <button key={r} className={r === range ? 'active' : ''} onClick={() => setRange(r)}>

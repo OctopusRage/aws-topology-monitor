@@ -5,6 +5,7 @@ export const DP_TYPES = {
   opensearch: { label: 'OpenSearch', icon: '🔎', accent: '#38d39f' },
   clickhouse: { label: 'ClickHouse', icon: '⚡', accent: '#ffb547' },
   custom: { label: 'Custom', icon: '📦', accent: '#7b6cff' },
+  ec2: { label: 'EC2', icon: '🖥', accent: '#ff9900' },
 };
 
 export function DatapointNode({ data }) {

@@ -57,6 +57,7 @@ export const api = {
     ),
   // data points + saved views
   listDatasources: () => get('/api/datasources'),
+  listEc2: () => get('/api/ec2/instances'),
   datapointMetrics: (datapoint, range) =>
     post('/api/metrics/datapoint', { datapoint, range }),
   rdsTopQueries: (dbInstanceId, range) =>

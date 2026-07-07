@@ -67,6 +67,26 @@ function opensearchPanels(cfg, range) {
   ];
 }
 
+// EC2 instance metrics (AWS/EC2). Basic monitoring is 5-min, so period 300.
+function ec2Panels(cfg, range) {
+  const dims = [{ Name: 'InstanceId', Value: cfg.instanceId }];
+  const P = 300;
+  return [
+    { key: 'cpu', label: 'CPU', unit: '%', color: '#ff6d5a', max: 100,
+      cw: { namespace: 'AWS/EC2', metricName: 'CPUUtilization', dimensions: dims, stat: 'Average', period: P },
+      mock: () => mockSeries(range, 35, 12) },
+    { key: 'netin', label: 'Net In', unit: 'MB/s', color: '#7b6cff',
+      cw: { namespace: 'AWS/EC2', metricName: 'NetworkIn', dimensions: dims, stat: 'Sum', period: P, perSecond: true, transform: (b) => b / 1048576 },
+      mock: () => mockSeries(range, 3, 1.2, 0, 60) },
+    { key: 'netout', label: 'Net Out', unit: 'MB/s', color: '#38d39f',
+      cw: { namespace: 'AWS/EC2', metricName: 'NetworkOut', dimensions: dims, stat: 'Sum', period: P, perSecond: true, transform: (b) => b / 1048576 },
+      mock: () => mockSeries(range, 2, 1, 0, 60) },
+    { key: 'disk', label: 'Disk Read', unit: 'MB/s', color: '#ffb547',
+      cw: { namespace: 'AWS/EC2', metricName: 'DiskReadBytes', dimensions: dims, stat: 'Sum', period: P, perSecond: true, transform: (b) => b / 1048576 },
+      mock: () => mockSeries(range, 0.8, 0.5, 0, 20) },
+  ];
+}
+
 export async function getDatapointMetrics(dp, range = '1h') {
   const cfg = dp.config || {};
 
@@ -81,14 +101,20 @@ export async function getDatapointMetrics(dp, range = '1h') {
     return { source: res.source, range, error: res.error, panels };
   }
 
-  // RDS / OpenSearch → CloudWatch.
+  // RDS / OpenSearch / EC2 → CloudWatch.
   const specs =
-    dp.type === 'opensearch' ? opensearchPanels(cfg, range) : rdsPanels(cfg, range);
+    dp.type === 'opensearch'
+      ? opensearchPanels(cfg, range)
+      : dp.type === 'ec2'
+      ? ec2Panels(cfg, range)
+      : rdsPanels(cfg, range);
 
   // If CloudWatch isn't usable (mock mode or missing ids), return mock panels.
   const canQuery =
     dp.type === 'opensearch'
       ? cfg.domainName && cfg.accountId
+      : dp.type === 'ec2'
+      ? cfg.instanceId
       : cfg.dbInstanceId;
 
   if (!canQuery) {

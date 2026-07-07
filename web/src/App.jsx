@@ -17,7 +17,9 @@ import Login from './components/Login.jsx';
 import UsersModal from './components/UsersModal.jsx';
 import AccountModal from './components/AccountModal.jsx';
 import { datapointNodeTypes } from './components/datapointNode.jsx';
+import { instanceNodeTypes } from './components/instanceNodes.jsx';
 import AddDataPointModal from './components/AddDataPointModal.jsx';
+import AddInstancesModal from './components/AddInstancesModal.jsx';
 import DatapointMetricsModal from './components/DatapointMetricsModal.jsx';
 import { useAuth } from './auth.jsx';
 
@@ -31,6 +33,7 @@ const nodeTypes = {
   ...neuralNodeTypes,
   ...radialNodeTypes,
   ...datapointNodeTypes,
+  ...instanceNodeTypes,
 };
 
 function Dashboard() {
@@ -51,6 +54,8 @@ function Dashboard() {
   // data points + saved views
   const [datapoints, setDatapoints] = useState([]);
   const [connections, setConnections] = useState([]);
+  const [instanceGroups, setInstanceGroups] = useState([]);
+  const [showAddInstances, setShowAddInstances] = useState(false);
   const [views, setViews] = useState([]);
   const [currentView, setCurrentView] = useState(null); // {id,name,createdBy}
   const [showAddDp, setShowAddDp] = useState(false);
@@ -77,28 +82,68 @@ function Dashboard() {
     setShowAddDp(false);
   }, []);
 
-  // Persist a data point's dragged position so canvas rebuilds don't reset it.
+  // ── instance groups (standalone EC2, not connected to a target group) ──
+  const addInstances = useCallback(({ groupId, groupName, instances }) => {
+    setInstanceGroups((prev) => {
+      if (groupId) {
+        return prev.map((g) =>
+          g.id === groupId
+            ? {
+                ...g,
+                instances: [
+                  ...g.instances,
+                  ...instances.filter((i) => !g.instances.some((x) => x.id === i.id)),
+                ],
+              }
+            : g
+        );
+      }
+      return [
+        ...prev,
+        { id: crypto.randomUUID(), name: groupName, instances, position: null },
+      ];
+    });
+    setShowAddInstances(false);
+  }, []);
+
+  const removeInstanceGroup = useCallback((id) => {
+    setInstanceGroups((prev) => prev.filter((g) => g.id !== id));
+  }, []);
+
+  // Persist a dragged position (data points pin; instance groups move as a unit).
   const onNodeDragStop = useCallback((_, node) => {
     if (String(node.id).startsWith('dp:')) {
       const id = node.id.slice(3);
-      // dragging a data point pins it so it leaves the auto-group
       setDatapoints((dps) =>
         dps.map((d) =>
           d.id === id ? { ...d, position: node.position, pinned: true } : d
         )
       );
+    } else if (String(node.id).startsWith('ig:')) {
+      const id = node.id.slice(3);
+      setInstanceGroups((gs) =>
+        gs.map((g) => (g.id === id ? { ...g, position: node.position } : g))
+      );
     }
   }, []);
 
-  // Optional manual connection (only when a data point is one of the ends).
+  // Optional manual connection — at least one end must be a user-added node
+  // (data point / instance / instance group), so base topology edges are left alone.
   const onConnect = useCallback((params) => {
-    if (!params.source || !params.target) return;
-    if (!params.source.startsWith('dp:') && !params.target.startsWith('dp:')) return;
+    if (!params.source || !params.target || params.source === params.target) return;
+    const addable = (id) => id.startsWith('dp:') || id.startsWith('ig:');
+    if (!addable(params.source) && !addable(params.target)) return;
     setConnections((cs) =>
       cs.some((c) => c.source === params.source && c.target === params.target)
         ? cs
         : [...cs, { source: params.source, target: params.target }]
     );
+  }, []);
+
+  // Delete a manual connection (select the edge + press Backspace/Delete).
+  const onEdgesDelete = useCallback((deleted) => {
+    const keys = new Set(deleted.map((e) => `${e.source}->${e.target}`));
+    setConnections((cs) => cs.filter((c) => !keys.has(`${c.source}->${c.target}`)));
   }, []);
 
   // ── saved views ──
@@ -112,6 +157,7 @@ function Dashboard() {
       setCurrentView(null);
       setDatapoints([]);
       setConnections([]);
+      setInstanceGroups([]);
       return;
     }
     try {
@@ -119,6 +165,7 @@ function Dashboard() {
       setSelected(v.baseLbArn);
       setDatapoints(v.data?.datapoints || []);
       setConnections(v.data?.connections || []);
+      setInstanceGroups(v.data?.instanceGroups || []);
       setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy });
     } catch (e) {
       setError(String(e.message || e));
@@ -127,7 +174,7 @@ function Dashboard() {
 
   const saveView = useCallback(async () => {
     try {
-      const data = { datapoints, connections };
+      const data = { datapoints, connections, instanceGroups };
       if (currentView?.id) {
         await api.updateView(currentView.id, {
           name: currentView.name,
@@ -144,7 +191,7 @@ function Dashboard() {
     } catch (e) {
       setError(String(e.message || e));
     }
-  }, [currentView, selected, datapoints, connections, loadViewsList]);
+  }, [currentView, selected, datapoints, connections, instanceGroups, loadViewsList]);
 
   // Which view is "active" right now — a saved view, or just the base ELB.
   const activeRef = currentView?.id
@@ -261,14 +308,72 @@ function Dashboard() {
       target: c.target,
       type: 'default',
       className: 'dp-conn',
-      style: { stroke: '#8a8fa3', strokeWidth: 1.4, strokeDasharray: '5 5', opacity: 0.5 },
+      deletable: true,
+      markerEnd: { type: 'arrowclosed', color: '#8a8fa3', width: 16, height: 16 },
+      style: { stroke: '#8a8fa3', strokeWidth: 1.6, strokeDasharray: '5 5', opacity: 0.7 },
     }));
 
+    // Standalone instance groups (EC2 workers, not connected to any target group).
+    const IW = 158, IH = 62, IGAP = 14, IPADX = 16, IHEAD = 58, IPADB = 16, ICOLS = 2;
+    const igNodes = [];
+    let igY = 40;
+    for (const g of instanceGroups) {
+      const n = g.instances.length;
+      const cols = Math.min(ICOLS, Math.max(1, n));
+      const rows = Math.ceil(n / cols) || 1;
+      const width = IPADX * 2 + cols * IW + (cols - 1) * IGAP;
+      const height = IHEAD + rows * IH + (rows - 1) * IGAP + IPADB;
+      const pos = g.position || { x: -470, y: igY };
+      igY += height + 40;
+
+      igNodes.push({
+        id: `ig:${g.id}`,
+        type: 'instanceGroup',
+        position: pos,
+        style: { width, height },
+        data: { name: g.name, count: n, onRemove: () => removeInstanceGroup(g.id) },
+        draggable: true,
+      });
+      g.instances.forEach((inst, i) => {
+        igNodes.push({
+          id: `ig:${g.id}::${inst.id}::${i}`,
+          type: 'instanceNode',
+          parentId: `ig:${g.id}`,
+          extent: 'parent',
+          draggable: false,
+          position: {
+            x: IPADX + (i % ICOLS) * (IW + IGAP),
+            y: IHEAD + Math.floor(i / ICOLS) * (IH + IGAP),
+          },
+          data: {
+            inst,
+            onOpen: () =>
+              setActiveDp({
+                type: 'ec2',
+                label: inst.name,
+                source: 'cloudwatch',
+                config: { instanceId: inst.id, privateIp: inst.privateIp },
+              }),
+          },
+        });
+      });
+    }
+
     return {
-      nodes: [...base.nodes, ...dpNodes],
-      edges: [...base.edges, ...connEdges],
+      nodes: [...base.nodes, ...dpNodes, ...igNodes],
+      // base topology edges aren't user-deletable; only manual connections are
+      edges: [...base.edges.map((e) => ({ ...e, deletable: false })), ...connEdges],
     };
-  }, [topology, openMetrics, viewMode, datapoints, connections, removeDatapoint]);
+  }, [
+    topology,
+    openMetrics,
+    viewMode,
+    datapoints,
+    connections,
+    removeDatapoint,
+    instanceGroups,
+    removeInstanceGroup,
+  ]);
 
   useEffect(() => {
     setNodes(graph.nodes);
@@ -304,7 +409,8 @@ function Dashboard() {
   useEffect(() => {
     setNodes((nds) =>
       nds.map((n) => {
-        if (n.type === 'datapoint' || n.type === 'dpGroup') return n; // never dim data points
+        if (['datapoint', 'dpGroup', 'instanceGroup', 'instanceNode'].includes(n.type))
+          return n; // never dim data points / instances
         const cls = !hoveredTg
           ? undefined
           : n.id === hoveredTg ||
@@ -432,6 +538,12 @@ function Dashboard() {
               <b>{datapoints.length}</b> data point{datapoints.length > 1 ? 's' : ''}
             </div>
           )}
+          {instanceGroups.length > 0 && (
+            <div className="summary-item">
+              <b>{instanceGroups.reduce((n, g) => n + g.instances.length, 0)}</b> instance
+              {' '}in <b>{instanceGroups.length}</b> group{instanceGroups.length > 1 ? 's' : ''}
+            </div>
+          )}
 
           <div className="views-bar">
             <div className="views-group">
@@ -464,6 +576,9 @@ function Dashboard() {
             <button className="view-action" onClick={() => setShowAddDp(true)}>
               ＋ Data point
             </button>
+            <button className="view-action" onClick={() => setShowAddInstances(true)}>
+              ＋ Instances
+            </button>
             <button className="view-action save" onClick={saveView}>
               💾 {currentView?.id ? 'Save' : 'Save as…'}
             </button>
@@ -486,6 +601,7 @@ function Dashboard() {
           onNodeMouseLeave={onNodeLeave}
           onNodeDragStop={onNodeDragStop}
           onConnect={onConnect}
+          onEdgesDelete={onEdgesDelete}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.2 }}
@@ -523,6 +639,13 @@ function Dashboard() {
       {showAccount && <AccountModal onClose={() => setShowAccount(false)} />}
       {showAddDp && (
         <AddDataPointModal onAdd={addDatapoint} onClose={() => setShowAddDp(false)} />
+      )}
+      {showAddInstances && (
+        <AddInstancesModal
+          groups={instanceGroups}
+          onAdd={addInstances}
+          onClose={() => setShowAddInstances(false)}
+        />
       )}
       {activeDp && (
         <DatapointMetricsModal datapoint={activeDp} onClose={() => setActiveDp(null)} />

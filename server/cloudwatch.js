@@ -179,10 +179,13 @@ export async function getMetricSeries({
   dimensions,
   stat = 'Average',
   range = '1h',
+  period: periodOverride, // EC2 basic monitoring only has 5-min data → pass 300
+  perSecond = false, // divide by the period (e.g. NetworkIn bytes → bytes/s)
   transform,
 }) {
   const preset = RANGE[range] || RANGE['1h'];
-  const { period, seconds } = preset;
+  const period = periodOverride || preset.period;
+  const { seconds } = preset;
   const end = new Date();
   const start = new Date(end.getTime() - seconds * 1000);
 
@@ -208,8 +211,10 @@ export async function getMetricSeries({
   const r = out.MetricDataResults?.[0];
   const times = r?.Timestamps || [];
   const values = r?.Values || [];
-  return times.map((t, i) => ({
-    t: t instanceof Date ? t.getTime() : new Date(t).getTime(),
-    v: Number((transform ? transform(values[i]) : values[i]).toFixed(2)),
-  }));
+  return times.map((t, i) => {
+    let v = values[i];
+    if (perSecond) v = v / period;
+    if (transform) v = transform(v);
+    return { t: t instanceof Date ? t.getTime() : new Date(t).getTime(), v: Number(v.toFixed(2)) };
+  });
 }

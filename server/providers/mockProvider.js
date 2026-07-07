@@ -118,6 +118,18 @@ export const mockProvider = {
     };
   },
 
+  async listEc2Instances() {
+    const states = ['running', 'running', 'running', 'stopped'];
+    return Array.from({ length: 24 }, (_, i) => ({
+      id: `i-0${(1000 + i).toString(16)}worker`,
+      name: `worker-${String(i + 1).padStart(2, '0')}`,
+      type: i % 3 === 0 ? 'c6g.xlarge' : 't3.medium',
+      state: states[i % states.length],
+      privateIp: `10.30.${20 + (i % 5)}.${30 + i}`,
+      az: `ap-southeast-3${['a', 'b', 'c'][i % 3]}`,
+    }));
+  },
+
   // Resolve a target group ARN to its member instances (used by metrics layer).
   async getTargetGroupTargets(tgArn) {
     for (const lb of LOAD_BALANCERS) {

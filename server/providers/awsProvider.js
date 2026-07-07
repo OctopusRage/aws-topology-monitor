@@ -186,6 +186,32 @@ export const awsProvider = {
     return { enabled: true, engine: db.Engine, queries };
   },
 
+  // All EC2 instances (for the "add instances" picker). Paginated + mapped.
+  async listEc2Instances() {
+    const instances = [];
+    let token;
+    do {
+      const out = await ec2.send(
+        new DescribeInstancesCommand({ NextToken: token, MaxResults: 1000 })
+      );
+      for (const res of out.Reservations || []) {
+        for (const inst of res.Instances || []) {
+          const nameTag = (inst.Tags || []).find((t) => t.Key === 'Name');
+          instances.push({
+            id: inst.InstanceId,
+            name: nameTag?.Value || inst.InstanceId,
+            type: inst.InstanceType,
+            state: inst.State?.Name,
+            privateIp: inst.PrivateIpAddress,
+            az: inst.Placement?.AvailabilityZone,
+          });
+        }
+      }
+      token = out.NextToken;
+    } while (token);
+    return instances.sort((a, b) => a.name.localeCompare(b.name));
+  },
+
   async getTargetGroupTargets(tgArn) {
     const health = await elbv2.send(
       new DescribeTargetHealthCommand({ TargetGroupArn: tgArn })

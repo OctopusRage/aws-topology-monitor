@@ -103,6 +103,15 @@ app.get('/api/datasources', requireAuth, async (_req, res) => {
   }
 });
 
+// EC2 instances for the "add instances" picker (search happens client-side).
+app.get('/api/ec2/instances', requireAuth, async (_req, res) => {
+  try {
+    res.json(await provider.listEc2Instances());
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 // ── RDS Top SQL (Performance Insights) ───────────────────────────────────────
 app.get('/api/rds/top-queries', requireAuth, async (req, res) => {
   const dbInstanceId = req.query.dbInstanceId;

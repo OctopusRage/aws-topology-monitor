@@ -282,6 +282,79 @@ html, body, #root {
 }
 .react-flow__edge.dp-conn .react-flow__edge-path { stroke-dasharray: 5 5; }
 
+/* ---------- Instance group (standalone EC2) ---------- */
+.ig-node {
+  position: relative;
+  width: 100%; height: 100%;
+  background: rgba(255, 153, 0, 0.05);
+  border: 1.5px solid rgba(255, 153, 0, 0.35);
+  border-radius: 14px;
+}
+.ig-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px dashed var(--node-border);
+}
+.ig-header-left { display: flex; align-items: center; gap: 10px; }
+.ig-icon { background: rgba(255,153,0,.16); width: 34px; height: 34px; font-size: 17px; }
+.ig-count {
+  font-size: 11px; font-weight: 700; color: #ff9900;
+  background: rgba(255,153,0,.14); border-radius: 20px; padding: 3px 10px;
+}
+.ig-remove { top: -8px; right: -8px; }
+
+.inst-node {
+  width: 158px; height: 62px; display: flex; gap: 8px;
+  padding: 9px 11px; background: var(--node); border: 1px solid var(--node-border);
+  border-radius: 10px; cursor: pointer; transition: border-color .12s;
+}
+.inst-node:hover { border-color: #ff9900; }
+.inst-status { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+.inst-body { min-width: 0; }
+.inst-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inst-meta {
+  display: flex; justify-content: space-between; gap: 6px;
+  font-size: 9.5px; color: var(--muted); font-family: ui-monospace, monospace;
+  white-space: nowrap; overflow: hidden;
+}
+.inst-meta.subtle { opacity: .7; }
+
+/* ---------- Add instances modal ---------- */
+.ins-modal { width: min(560px, 96vw); }
+.ins-form { display: flex; flex-direction: column; gap: 14px; padding: 20px 24px 24px; }
+.ins-group-row { display: flex; gap: 10px; }
+.ins-group-row .login-field.grow { flex: 1; }
+.ins-form select, .ins-form input {
+  background: var(--node); border: 1px solid var(--node-border); border-radius: 8px;
+  padding: 10px 12px; color: var(--text); font-size: 13px; outline: none;
+}
+.ins-form select:focus, .ins-form input:focus { border-color: var(--accent-2); }
+.ins-search { width: 100%; }
+.ins-list {
+  margin-top: 10px; max-height: 300px; overflow-y: auto;
+  border: 1px solid var(--node-border); border-radius: 10px; background: var(--node);
+}
+.ins-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 12px; background: transparent; border: none; cursor: pointer;
+  border-bottom: 1px solid var(--node-border); text-align: left; color: var(--text);
+}
+.ins-row:last-child { border-bottom: none; }
+.ins-row:hover { background: var(--panel-2); }
+.ins-row.on { background: rgba(255,153,0,.10); }
+.ins-check {
+  width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0;
+  border: 1px solid var(--node-border); display: grid; place-items: center;
+  font-size: 11px; color: #fff;
+}
+.ins-check.on { background: #ff9900; border-color: #ff9900; }
+.ins-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+.ins-dot.running { background: var(--green); }
+.ins-dot.stopped { background: var(--red); }
+.ins-dot.stopping, .ins-dot.pending { background: var(--amber); }
+.ins-row-name { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.ins-row-meta { margin-left: auto; font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; white-space: nowrap; }
+.ins-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 12px; }
+
 /* ---------- Add data point modal ---------- */
 .dp-modal { width: min(460px, 94vw); }
 .dp-form { display: flex; flex-direction: column; gap: 14px; padding: 20px 24px 24px; }
