@@ -2,8 +2,23 @@
 import { db } from './db.js';
 import { hashPassword, verifyPassword, newToken } from './auth.js';
 
+function parseDefaultView(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 const publicUser = (u) =>
-  u && { id: u.id, username: u.username, role: u.role, created_at: u.created_at };
+  u && {
+    id: u.id,
+    username: u.username,
+    role: u.role,
+    created_at: u.created_at,
+    defaultView: parseDefaultView(u.default_view),
+  };
 
 export function findByUsername(username) {
   return db.prepare('SELECT * FROM users WHERE username = ?').get(username);
@@ -68,10 +83,17 @@ export function logout(token) {
 export function getUserByToken(token) {
   const row = db
     .prepare(
-      `SELECT u.id, u.username, u.role, u.created_at
+      `SELECT u.id, u.username, u.role, u.created_at, u.default_view
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token = ?`
     )
     .get(token);
-  return row || null;
+  return publicUser(row);
+}
+
+export function setDefaultView(userId, value) {
+  db.prepare('UPDATE users SET default_view = ? WHERE id = ?').run(
+    value ? JSON.stringify(value) : null,
+    userId
+  );
 }

@@ -38,6 +38,12 @@ db.exec(`
   );
 `);
 
+// Migration: per-user startup view preference.
+const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+if (!userCols.includes('default_view')) {
+  db.exec('ALTER TABLE users ADD COLUMN default_view TEXT');
+}
+
 // Seed a default admin on first run so someone can log in.
 const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 if (count === 0) {

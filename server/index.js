@@ -51,6 +51,13 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json(req.user);
 });
 
+// Per-user startup view: { type: 'saved'|'base', ref } or null to clear.
+app.put('/api/auth/default-view', requireAuth, (req, res) => {
+  const { defaultView } = req.body || {};
+  users.setDefaultView(req.user.id, defaultView || null);
+  res.json({ ok: true });
+});
+
 app.post('/api/auth/password', requireAuth, (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   try {

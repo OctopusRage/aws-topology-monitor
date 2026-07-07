@@ -48,8 +48,13 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  // patch fields on the current user locally (e.g. after saving preferences)
+  const patchUser = useCallback((fields) => {
+    setUser((u) => (u ? { ...u, ...fields } : u));
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, ready, login, logout }}>
+    <AuthContext.Provider value={{ user, ready, login, logout, patchUser }}>
       {children}
     </AuthContext.Provider>
   );

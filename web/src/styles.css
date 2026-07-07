@@ -222,11 +222,16 @@ html, body, #root {
 
 /* ---------- Views bar ---------- */
 .views-bar { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.views-group { display: flex; align-items: center; gap: 6px; }
+.views-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+}
 .views-select {
   background: var(--node); border: 1px solid var(--node-border); color: var(--text);
-  border-radius: 8px; padding: 7px 10px; font-size: 12px; outline: none; max-width: 260px;
+  border-radius: 8px; padding: 7px 10px; font-size: 12px; outline: none; max-width: 240px;
 }
 .views-select:focus { border-color: var(--accent-2); }
+.view-action.star.on { border-color: var(--amber); color: var(--amber); }
 .view-action {
   background: var(--node); border: 1px solid var(--node-border); color: var(--text);
   border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer;

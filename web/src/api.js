@@ -40,6 +40,7 @@ export const api = {
   me: () => get('/api/auth/me'),
   changePassword: (currentPassword, newPassword) =>
     post('/api/auth/password', { currentPassword, newPassword }),
+  setDefaultView: (defaultView) => put('/api/auth/default-view', { defaultView }),
   // users (admin)
   listUsers: () => get('/api/users'),
   createUser: (username, password, role) =>

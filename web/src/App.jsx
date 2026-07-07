@@ -34,7 +34,7 @@ const nodeTypes = {
 };
 
 function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, patchUser } = useAuth();
   const [showUsers, setShowUsers] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [hoveredTg, setHoveredTg] = useState(null);
@@ -146,22 +146,57 @@ function Dashboard() {
     }
   }, [currentView, selected, datapoints, connections, loadViewsList]);
 
-  // load saved views on mount
-  useEffect(() => {
-    loadViewsList();
-  }, [loadViewsList]);
+  // Which view is "active" right now — a saved view, or just the base ELB.
+  const activeRef = currentView?.id
+    ? { type: 'saved', ref: currentView.id }
+    : { type: 'base', ref: selected };
+  const isDefault =
+    !!user?.defaultView &&
+    user.defaultView.type === activeRef.type &&
+    user.defaultView.ref === activeRef.ref;
 
-  // load ELB list + health on mount
+  const toggleDefault = useCallback(async () => {
+    const next = isDefault ? null : activeRef;
+    try {
+      await api.setDefaultView(next);
+      patchUser({ defaultView: next });
+    } catch (e) {
+      setError(String(e.message || e));
+    }
+  }, [isDefault, activeRef, patchUser]);
+
   useEffect(() => {
     api.health().then(setHealth).catch(() => {});
-    api
-      .listElbs()
-      .then((list) => {
-        setElbs(list);
-        if (list.length) setSelected(list[0].arn);
-      })
-      .catch((e) => setError(String(e.message || e)));
   }, []);
+
+  // On mount: load ELBs + saved views, then open the user's startup view.
+  const initedRef = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [list, vs] = await Promise.all([
+        api.listElbs().catch(() => []),
+        api.listViews().catch(() => []),
+      ]);
+      if (!alive) return;
+      setElbs(list);
+      setViews(vs);
+      if (initedRef.current) return;
+      initedRef.current = true;
+
+      const dv = user?.defaultView;
+      if (dv?.type === 'saved' && vs.some((v) => v.id === dv.ref)) {
+        loadView(dv.ref);
+      } else if (dv?.type === 'base' && list.some((e) => e.arn === dv.ref)) {
+        setSelected(dv.ref);
+      } else if (list.length) {
+        setSelected(list[0].arn);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [user, loadView]);
 
   // load topology when selection changes
   useEffect(() => {
@@ -328,8 +363,14 @@ function Dashboard() {
           </div>
 
           <label className="select-wrap">
-            <span>Load Balancer</span>
-            <select value={selected} onChange={(e) => setSelected(e.target.value)}>
+            <span>Base view · ELB</span>
+            <select
+              value={selected}
+              onChange={(e) => {
+                setSelected(e.target.value);
+                setCurrentView(null); // manual base change → no longer a saved view
+              }}
+            >
               {elbs.length === 0 && <option value="">No ELBs found</option>}
               {elbs.map((e) => (
                 <option key={e.arn} value={e.arn}>
@@ -393,19 +434,33 @@ function Dashboard() {
           )}
 
           <div className="views-bar">
-            <select
-              className="views-select"
-              value={currentView?.id || ''}
-              onChange={(e) => loadView(e.target.value)}
-              title="Saved views (shared)"
+            <div className="views-group">
+              <span className="views-label">Saved view</span>
+              <select
+                className="views-select"
+                value={currentView?.id || ''}
+                onChange={(e) => loadView(e.target.value)}
+                title="Shared saved views"
+              >
+                <option value="">— None (base only) —</option>
+                {views.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name} · {v.createdByName || 'unknown'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              className={`view-action star ${isDefault ? 'on' : ''}`}
+              onClick={toggleDefault}
+              title={
+                isDefault
+                  ? 'This loads on login — click to unset'
+                  : 'Load this view on login'
+              }
             >
-              <option value="">— Base view —</option>
-              {views.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name} · {v.createdByName || 'unknown'}
-                </option>
-              ))}
-            </select>
+              {isDefault ? '★' : '☆'} Default
+            </button>
             <button className="view-action" onClick={() => setShowAddDp(true)}>
               ＋ Data point
             </button>
