@@ -1,0 +1,32 @@
+# Single-container deploy (Hormuz Dock etc.): one service serves UI + API on a
+# unique port. Hormuz just routes your domain → this container's 8473.
+#   docker compose -f docker-compose.hormuz.yml up -d --build
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8473"
+      STATIC_DIR: /app/public
+      USE_AWS: ${USE_AWS:-false}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      MOCK_METRICS: ${MOCK_METRICS:-true}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://localhost:9090}
+      NODE_EXPORTER_PORT: ${NODE_EXPORTER_PORT:-9100}
+      USE_CLOUDWATCH_REQUESTS: ${USE_CLOUDWATCH_REQUESTS:-false}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+    volumes:
+      - data:/app/data
+      # Optional: use your local AWS profile instead of the keys above
+      # - ${HOME}/.aws:/root/.aws:ro
+    ports:
+      - "${APP_PORT:-8473}:8473"
+
+volumes:
+  data:

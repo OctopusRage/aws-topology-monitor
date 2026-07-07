@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { join } from 'node:path';
 import { config } from './config.js';
 import { mockProvider } from './providers/mockProvider.js';
 import { getTargetGroupMetrics } from './prometheus.js';
@@ -254,6 +255,17 @@ app.get('/api/metrics/target-group', requireAuth, async (req, res) => {
     res.status(500).json({ error: String(err.message || err) });
   }
 });
+
+// Single-container deploy: also serve the built frontend (STATIC_DIR set in the
+// combined image), so one port serves both UI and API (same-origin, no nginx).
+const staticDir = process.env.STATIC_DIR;
+if (staticDir) {
+  app.use(express.static(staticDir));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api/')) return next();
+    res.sendFile(join(staticDir, 'index.html'));
+  });
+}
 
 app.listen(config.port, () => {
   console.log(

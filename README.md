@@ -57,6 +57,19 @@ docker compose up -d --build
 - Change `ADMIN_PASSWORD` before deploying; the default admin is seeded on first run.
 - To wire Prometheus, set `MOCK_METRICS=false` + `PROMETHEUS_URL` in `.env`.
 
+### Single container (PaaS / Hormuz Dock)
+
+For a platform that routes a domain → one container, the Node server can serve
+the built UI *and* the API on one port (no nginx). Default port `8473`:
+
+```bash
+docker compose -f docker-compose.hormuz.yml up -d --build
+# point Hormuz Dock at the container's 8473 (override with APP_PORT)
+```
+
+Same `.env` applies. The 2-container (nginx) setup above stays available for
+non-PaaS deploys.
+
 ## Login & users
 
 The app requires login. On first run a default admin is seeded (SQLite via
