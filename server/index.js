@@ -4,6 +4,10 @@ import { config } from './config.js';
 import { mockProvider } from './providers/mockProvider.js';
 import { getTargetGroupMetrics } from './prometheus.js';
 import { getRequestCount } from './cloudwatch.js';
+import { makeAuthMiddleware } from './auth.js';
+import * as users from './users.js'; // also triggers db init + admin seed
+
+const { requireAuth, requireAdmin } = makeAuthMiddleware(users.getUserByToken);
 
 // Pick the data source. AWS provider is imported lazily so the app boots even
 // without the AWS SDK installed / credentials configured when USE_AWS=false.
@@ -27,8 +31,53 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// ── Auth ────────────────────────────────────────────────────────────────────
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  const result = users.login(username, password);
+  if (!result) return res.status(401).json({ error: 'invalid credentials' });
+  res.json(result);
+});
+
+app.post('/api/auth/logout', requireAuth, (req, res) => {
+  const token = (req.headers.authorization || '').slice(7);
+  users.logout(token);
+  res.json({ ok: true });
+});
+
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  res.json(req.user);
+});
+
+// ── User management (admin only) ─────────────────────────────────────────────
+app.get('/api/users', requireAuth, requireAdmin, (_req, res) => {
+  res.json(users.listUsers());
+});
+
+app.post('/api/users', requireAuth, requireAdmin, (req, res) => {
+  const { username, password, role } = req.body || {};
+  try {
+    res.status(201).json(users.createUser(username, password, role));
+  } catch (err) {
+    res.status(400).json({ error: String(err.message || err) });
+  }
+});
+
+app.delete('/api/users/:id', requireAuth, requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  if (id === req.user.id)
+    return res.status(400).json({ error: 'cannot delete your own account' });
+  const target = users.listUsers().find((u) => u.id === id);
+  if (!target) return res.status(404).json({ error: 'user not found' });
+  if (target.role === 'admin' && users.countAdmins() <= 1)
+    return res.status(400).json({ error: 'cannot delete the last admin' });
+  users.deleteUser(id);
+  res.json({ ok: true });
+});
+
+// ── Topology + metrics (any authenticated user) ──────────────────────────────
 // 1) List ELBs to choose from.
-app.get('/api/elbs', async (_req, res) => {
+app.get('/api/elbs', requireAuth, async (_req, res) => {
   try {
     res.json(await provider.listLoadBalancers());
   } catch (err) {
@@ -37,7 +86,7 @@ app.get('/api/elbs', async (_req, res) => {
 });
 
 // 2+3) Topology for a chosen ELB: target groups, each with its servers.
-app.get('/api/topology', async (req, res) => {
+app.get('/api/topology', requireAuth, async (req, res) => {
   const lbArn = req.query.lbArn;
   if (!lbArn) return res.status(400).json({ error: 'lbArn is required' });
   try {
@@ -50,7 +99,7 @@ app.get('/api/topology', async (req, res) => {
 });
 
 // 4) Monitoring metrics for a target group (from node_exporter via Prometheus).
-app.get('/api/metrics/target-group', async (req, res) => {
+app.get('/api/metrics/target-group', requireAuth, async (req, res) => {
   const tgArn = req.query.tgArn;
   const lbArn = req.query.lbArn;
   const range = req.query.range || '1h';

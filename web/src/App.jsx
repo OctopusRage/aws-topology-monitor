@@ -13,11 +13,16 @@ import { nodeTypes as gridNodeTypes } from './components/nodes.jsx';
 import { neuralNodeTypes } from './components/neuralNodes.jsx';
 import { radialNodeTypes } from './components/radialNodes.jsx';
 import MetricsModal from './components/MetricsModal.jsx';
+import Login from './components/Login.jsx';
+import UsersModal from './components/UsersModal.jsx';
+import { useAuth } from './auth.jsx';
 
 // stable merged map so React Flow doesn't warn / rebuild
 const nodeTypes = { ...gridNodeTypes, ...neuralNodeTypes, ...radialNodeTypes };
 
-export default function App() {
+function Dashboard() {
+  const { user, logout } = useAuth();
+  const [showUsers, setShowUsers] = useState(false);
   const [elbs, setElbs] = useState([]);
   const [selected, setSelected] = useState('');
   const [topology, setTopology] = useState(null);
@@ -135,6 +140,24 @@ export default function App() {
               </span>
             </div>
           )}
+
+          <div className="user-menu">
+            {user?.role === 'admin' && (
+              <button className="users-btn" onClick={() => setShowUsers(true)}>
+                ⚙ Users
+              </button>
+            )}
+            <div className="user-chip">
+              <span className="user-avatar">{user?.username?.[0]?.toUpperCase()}</span>
+              <div className="user-meta">
+                <span className="user-name">{user?.username}</span>
+                <span className={`role-badge ${user?.role}`}>{user?.role}</span>
+              </div>
+            </div>
+            <button className="logout-btn" onClick={logout} title="Sign out">
+              ⎋
+            </button>
+          </div>
         </div>
       </header>
 
@@ -199,6 +222,15 @@ export default function App() {
           onClose={() => setActiveTg(null)}
         />
       )}
+
+      {showUsers && <UsersModal onClose={() => setShowUsers(false)} />}
     </div>
   );
+}
+
+export default function App() {
+  const { user, ready } = useAuth();
+  if (!ready) return <div className="boot">Loading…</div>;
+  if (!user) return <Login />;
+  return <Dashboard />;
 }

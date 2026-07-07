@@ -31,4 +31,10 @@ export const config = {
     useForRequests:
       String(process.env.USE_CLOUDWATCH_REQUESTS || 'false').toLowerCase() === 'true',
   },
+
+  // Default admin seeded on first run (only used when the users table is empty).
+  admin: {
+    username: process.env.ADMIN_USERNAME || 'admin',
+    password: process.env.ADMIN_PASSWORD || 'admin123',
+  },
 };

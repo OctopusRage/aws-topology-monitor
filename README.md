@@ -39,6 +39,24 @@ cd server && npm install && npm run dev   # API on :4000
 cd web    && npm install && npm run dev   # web on :5173
 ```
 
+## Login & users
+
+The app requires login. On first run a default admin is seeded (SQLite via
+`node:sqlite`, no native deps) — override with `ADMIN_USERNAME` / `ADMIN_PASSWORD`:
+
+```
+admin / admin123    ← change after first login
+```
+
+- **Roles**: `admin` can manage users (create / list / delete) via the **⚙ Users**
+  panel in the topbar; `user` can view topology + metrics only.
+- All data endpoints require a valid session token (`Authorization: Bearer …`);
+  tokens are opaque, stored in SQLite, and revoked on logout.
+- Passwords are hashed with scrypt. DB file: `server/data.db` (git-ignored).
+
+Auth endpoints: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`;
+admin: `GET/POST /api/users`, `DELETE /api/users/:id`.
+
 ## Go live
 
 Edit `server/.env` (copy from `.env.example`):
