@@ -6,6 +6,7 @@ export const DP_TYPES = {
   clickhouse: { label: 'ClickHouse', icon: '⚡', accent: '#ffb547' },
   custom: { label: 'Custom', icon: '📦', accent: '#7b6cff' },
   ec2: { label: 'EC2', icon: '🖥', accent: '#ff9900' },
+  elasticache: { label: 'ElastiCache', icon: '🧊', accent: '#e64980' },
 };
 
 export function DatapointNode({ data }) {

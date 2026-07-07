@@ -101,6 +101,11 @@ export const mockProvider = {
         { domain: 'logs-prod', engine: 'OpenSearch_2.11', status: 'active' },
         { domain: 'search-catalog', engine: 'OpenSearch_2.11', status: 'active' },
       ],
+      elasticache: [
+        { id: 'session-cache', engine: 'redis', nodeType: 'cache.r6g.large', status: 'available' },
+        { id: 'rate-limiter', engine: 'redis', nodeType: 'cache.t4g.medium', status: 'available' },
+        { id: 'page-cache', engine: 'memcached', nodeType: 'cache.r6g.xlarge', status: 'available' },
+      ],
     };
   },
 

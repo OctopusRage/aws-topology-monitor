@@ -13,6 +13,10 @@ import {
   ListDomainNamesCommand,
 } from '@aws-sdk/client-opensearch';
 import { PIClient, DescribeDimensionKeysCommand } from '@aws-sdk/client-pi';
+import {
+  ElastiCacheClient,
+  DescribeCacheClustersCommand,
+} from '@aws-sdk/client-elasticache';
 import { config } from '../config.js';
 
 const elbv2 = new ElasticLoadBalancingV2Client({ region: config.awsRegion });
@@ -20,6 +24,7 @@ const ec2 = new EC2Client({ region: config.awsRegion });
 const rds = new RDSClient({ region: config.awsRegion });
 const opensearch = new OpenSearchClient({ region: config.awsRegion });
 const pi = new PIClient({ region: config.awsRegion });
+const elasticache = new ElastiCacheClient({ region: config.awsRegion });
 
 const RANGE_SECONDS = { '15m': 900, '1h': 3600, '6h': 21600, '24h': 86400 };
 
@@ -125,11 +130,14 @@ export const awsProvider = {
     return _accountId;
   },
 
-  // Discover RDS instances + OpenSearch domains to offer as data points.
+  // Discover RDS + OpenSearch + ElastiCache to offer as data points.
   async listDataSources() {
-    const [rdsOut, esOut] = await Promise.all([
+    const [rdsOut, esOut, ecOut] = await Promise.all([
       rds.send(new DescribeDBInstancesCommand({})).catch(() => ({ DBInstances: [] })),
       opensearch.send(new ListDomainNamesCommand({})).catch(() => ({ DomainNames: [] })),
+      elasticache
+        .send(new DescribeCacheClustersCommand({}))
+        .catch(() => ({ CacheClusters: [] })),
     ]);
     return {
       rds: (rdsOut.DBInstances || []).map((d) => ({
@@ -142,6 +150,12 @@ export const awsProvider = {
         domain: d.DomainName,
         engine: d.EngineType,
         status: 'active',
+      })),
+      elasticache: (ecOut.CacheClusters || []).map((c) => ({
+        id: c.CacheClusterId,
+        engine: c.Engine,
+        nodeType: c.CacheNodeType,
+        status: c.CacheClusterStatus,
       })),
     };
   },

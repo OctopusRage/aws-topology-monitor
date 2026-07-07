@@ -67,6 +67,26 @@ function opensearchPanels(cfg, range) {
   ];
 }
 
+// ElastiCache (Redis/Memcached) metrics from CloudWatch AWS/ElastiCache.
+function elasticachePanels(cfg, range) {
+  const dims = [{ Name: 'CacheClusterId', Value: cfg.cacheClusterId }];
+  const P = 60;
+  return [
+    { key: 'cpu', label: 'CPU', unit: '%', color: '#ff6d5a', max: 100,
+      cw: { namespace: 'AWS/ElastiCache', metricName: 'EngineCPUUtilization', dimensions: dims, stat: 'Average', period: P },
+      mock: () => mockSeries(range, 30, 10) },
+    { key: 'mem', label: 'Memory Used', unit: '%', color: '#7b6cff', max: 100,
+      cw: { namespace: 'AWS/ElastiCache', metricName: 'DatabaseMemoryUsagePercentage', dimensions: dims, stat: 'Average', period: P },
+      mock: () => mockSeries(range, 55, 6) },
+    { key: 'conns', label: 'Connections', unit: '', color: '#38d39f',
+      cw: { namespace: 'AWS/ElastiCache', metricName: 'CurrConnections', dimensions: dims, stat: 'Average', period: P },
+      mock: () => mockSeries(range, 220, 40, 0, 5000) },
+    { key: 'hits', label: 'Cache Hits', unit: '/s', color: '#ffb547',
+      cw: { namespace: 'AWS/ElastiCache', metricName: 'CacheHits', dimensions: dims, stat: 'Sum', period: P, perSecond: true },
+      mock: () => mockSeries(range, 1800, 500, 0, 20000) },
+  ];
+}
+
 // EC2 instance metrics (AWS/EC2). Basic monitoring is 5-min, so period 300.
 function ec2Panels(cfg, range) {
   const dims = [{ Name: 'InstanceId', Value: cfg.instanceId }];
@@ -101,12 +121,14 @@ export async function getDatapointMetrics(dp, range = '1h') {
     return { source: res.source, range, error: res.error, panels };
   }
 
-  // RDS / OpenSearch / EC2 → CloudWatch.
+  // RDS / OpenSearch / EC2 / ElastiCache → CloudWatch.
   const specs =
     dp.type === 'opensearch'
       ? opensearchPanels(cfg, range)
       : dp.type === 'ec2'
       ? ec2Panels(cfg, range)
+      : dp.type === 'elasticache'
+      ? elasticachePanels(cfg, range)
       : rdsPanels(cfg, range);
 
   // If CloudWatch isn't usable (mock mode or missing ids), return mock panels.
@@ -115,6 +137,8 @@ export async function getDatapointMetrics(dp, range = '1h') {
       ? cfg.domainName && cfg.accountId
       : dp.type === 'ec2'
       ? cfg.instanceId
+      : dp.type === 'elasticache'
+      ? cfg.cacheClusterId
       : cfg.dbInstanceId;
 
   if (!canQuery) {

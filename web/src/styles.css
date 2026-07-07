@@ -359,6 +359,8 @@ html, body, #root {
 .dp-modal { width: min(460px, 94vw); }
 .dp-form { display: flex; flex-direction: column; gap: 14px; padding: 20px 24px 24px; }
 .dp-type-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.dp-type-grid-5 { grid-template-columns: repeat(5, 1fr); }
+.dp-type-grid-5 .dp-type { padding: 12px 4px; font-size: 10.5px; }
 .dp-type {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   background: var(--node); border: 1.5px solid var(--node-border); color: var(--text);
