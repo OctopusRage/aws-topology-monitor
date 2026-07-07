@@ -39,6 +39,24 @@ cd server && npm install && npm run dev   # API on :4000
 cd web    && npm install && npm run dev   # web on :5173
 ```
 
+## Deploy with Docker Compose
+
+Two containers: **api** (Node) + **web** (nginx serving the built UI and proxying
+`/api` → api). SQLite persists on a named volume; the UI is same-origin so no CORS.
+
+```bash
+cp .env.example .env      # set AWS creds, ADMIN_PASSWORD, WEB_PORT, etc.
+docker compose up -d --build
+# open http://localhost:8080  (or WEB_PORT)
+```
+
+- **AWS credentials**: put keys in `.env`, or uncomment the `~/.aws` mount in
+  `docker-compose.yml` to use your local profile.
+- **Data**: users / sessions / saved views live in the `data` volume
+  (`/app/data/data.db`), so they survive restarts.
+- Change `ADMIN_PASSWORD` before deploying; the default admin is seeded on first run.
+- To wire Prometheus, set `MOCK_METRICS=false` + `PROMETHEUS_URL` in `.env`.
+
 ## Login & users
 
 The app requires login. On first run a default admin is seeded (SQLite via

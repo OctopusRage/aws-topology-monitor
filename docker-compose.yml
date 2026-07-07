@@ -1,0 +1,34 @@
+services:
+  api:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      PORT: "4000"
+      USE_AWS: ${USE_AWS:-false}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      MOCK_METRICS: ${MOCK_METRICS:-true}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://localhost:9090}
+      NODE_EXPORTER_PORT: ${NODE_EXPORTER_PORT:-9100}
+      USE_CLOUDWATCH_REQUESTS: ${USE_CLOUDWATCH_REQUESTS:-false}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+    volumes:
+      - data:/app/data
+      # Optional: use your local AWS profile instead of the keys above
+      # - ${HOME}/.aws:/root/.aws:ro
+    expose:
+      - "4000"
+
+  web:
+    build: ./web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  data:
