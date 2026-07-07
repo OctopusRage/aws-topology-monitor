@@ -536,7 +536,8 @@ html, body, #root {
 .source-badge.prometheus { background: rgba(56,211,159,.15); color: var(--green); }
 .source-badge.mock { background: rgba(255,181,71,.15); color: var(--amber); }
 
-.modal-actions { display: flex; align-items: center; gap: 12px; }
+.modal-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.source-switch button { font-size: 11px; }
 .range-switch { display: flex; background: var(--node); border: 1px solid var(--node-border); border-radius: 8px; overflow: hidden; }
 .range-switch button {
   background: transparent; border: none; color: var(--muted);

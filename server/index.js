@@ -3,7 +3,7 @@ import cors from 'cors';
 import { config } from './config.js';
 import { mockProvider } from './providers/mockProvider.js';
 import { getTargetGroupMetrics } from './prometheus.js';
-import { getRequestCount } from './cloudwatch.js';
+import { getAlbTargetGroupMetrics } from './cloudwatch.js';
 import { getDatapointMetrics } from './datapoints.js';
 import { makeAuthMiddleware } from './auth.js';
 import * as users from './users.js'; // also triggers db init + admin seed
@@ -193,31 +193,32 @@ app.get('/api/topology', requireAuth, async (req, res) => {
 });
 
 // 4) Monitoring metrics for a target group (from node_exporter via Prometheus).
+// Metrics for a target group. Like data points, the source is selectable:
+//   source=cloudwatch → ALB metrics (request count, response time, 5XX, hosts)
+//   source=prometheus → node_exporter CPU / RAM / Storage across its instances
 app.get('/api/metrics/target-group', requireAuth, async (req, res) => {
   const tgArn = req.query.tgArn;
   const lbArn = req.query.lbArn;
   const range = req.query.range || '1h';
+  const source = req.query.source || 'cloudwatch';
   if (!tgArn) return res.status(400).json({ error: 'tgArn is required' });
+
   try {
-    const targets = await provider.getTargetGroupTargets(tgArn);
-    if (!targets) return res.status(404).json({ error: 'target group not found' });
-
-    // CPU / RAM / Storage (+ proxy requests) from Prometheus/node_exporter.
-    const metrics = await getTargetGroupMetrics(targets, range);
-    metrics.requestsSource = metrics.source;
-
-    // Override the Request Count panel with CloudWatch's native ALB metric.
-    if (config.cloudwatch.useForRequests && lbArn) {
-      try {
-        metrics.series.requests = await getRequestCount(lbArn, tgArn, range);
-        metrics.requestsSource = 'cloudwatch';
-      } catch (err) {
-        metrics.requestsSource = 'cloudwatch-fallback';
-        metrics.requestsError = String(err.message || err);
-      }
+    if (source === 'cloudwatch') {
+      if (!lbArn) return res.status(400).json({ error: 'lbArn is required for cloudwatch' });
+      return res.json(await getAlbTargetGroupMetrics(lbArn, tgArn, range));
     }
 
-    res.json({ tgArn, targetCount: targets.length, ...metrics });
+    // prometheus / node_exporter
+    const targets = await provider.getTargetGroupTargets(tgArn);
+    if (!targets) return res.status(404).json({ error: 'target group not found' });
+    const m = await getTargetGroupMetrics(targets, range);
+    const panels = [
+      { key: 'cpu', label: 'CPU', unit: '%', color: '#ff6d5a', max: 100, series: m.series.cpu },
+      { key: 'ram', label: 'Memory', unit: '%', color: '#7b6cff', max: 100, series: m.series.ram },
+      { key: 'storage', label: 'Storage', unit: '%', color: '#38d39f', max: 100, series: m.series.storage },
+    ];
+    res.json({ source: m.source, range, error: m.error, panels });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
