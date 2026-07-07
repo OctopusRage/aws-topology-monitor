@@ -37,6 +37,8 @@ export const api = {
   login: (username, password) => post('/api/auth/login', { username, password }),
   logout: () => post('/api/auth/logout', {}),
   me: () => get('/api/auth/me'),
+  changePassword: (currentPassword, newPassword) =>
+    post('/api/auth/password', { currentPassword, newPassword }),
   // users (admin)
   listUsers: () => get('/api/users'),
   createUser: (username, password, role) =>

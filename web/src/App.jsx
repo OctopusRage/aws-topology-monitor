@@ -15,7 +15,12 @@ import { radialNodeTypes } from './components/radialNodes.jsx';
 import MetricsModal from './components/MetricsModal.jsx';
 import Login from './components/Login.jsx';
 import UsersModal from './components/UsersModal.jsx';
+import AccountModal from './components/AccountModal.jsx';
 import { useAuth } from './auth.jsx';
+
+const TG_TYPES = ['targetGroup', 'tgN', 'tgRadial'];
+const SRV_TYPES = ['server', 'serverN'];
+const ELB_TYPES = ['elb', 'elbN', 'elbRadial'];
 
 // stable merged map so React Flow doesn't warn / rebuild
 const nodeTypes = { ...gridNodeTypes, ...neuralNodeTypes, ...radialNodeTypes };
@@ -23,6 +28,9 @@ const nodeTypes = { ...gridNodeTypes, ...neuralNodeTypes, ...radialNodeTypes };
 function Dashboard() {
   const { user, logout } = useAuth();
   const [showUsers, setShowUsers] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const [hoveredTg, setHoveredTg] = useState(null);
+  const hoverClear = useRef(null);
   const [elbs, setElbs] = useState([]);
   const [selected, setSelected] = useState('');
   const [topology, setTopology] = useState(null);
@@ -82,6 +90,47 @@ function Dashboard() {
     );
     return () => clearTimeout(id);
   }, [viewMode, selected, graph.nodes.length]);
+
+  // ── Hover highlight ──
+  const onNodeEnter = useCallback((_, node) => {
+    clearTimeout(hoverClear.current);
+    let tgId = null;
+    if (TG_TYPES.includes(node.type)) tgId = node.id;
+    else if (SRV_TYPES.includes(node.type))
+      tgId = node.parentId || String(node.id).split('::')[0];
+    if (tgId) setHoveredTg(tgId);
+  }, []);
+
+  const onNodeLeave = useCallback(() => {
+    clearTimeout(hoverClear.current);
+    hoverClear.current = setTimeout(() => setHoveredTg(null), 60);
+  }, []);
+
+  // Apply dim/highlight classes to nodes + edges based on the hovered group.
+  useEffect(() => {
+    setNodes((nds) =>
+      nds.map((n) => {
+        const cls = !hoveredTg
+          ? undefined
+          : n.id === hoveredTg ||
+            ELB_TYPES.includes(n.type) ||
+            n.parentId === hoveredTg ||
+            String(n.id).startsWith(hoveredTg + '::')
+          ? 'hl'
+          : 'dimmed';
+        return n.className === cls ? n : { ...n, className: cls };
+      })
+    );
+    setEdges((eds) =>
+      eds.map((e) => {
+        const base = (e.className || '').replace(/\s*(hl|dimmed)\b/g, '').trim();
+        const cls = !hoveredTg
+          ? base || undefined
+          : `${base} ${e.source === hoveredTg || e.target === hoveredTg ? 'hl' : 'dimmed'}`.trim();
+        return e.className === cls ? e : { ...e, className: cls };
+      })
+    );
+  }, [hoveredTg, setNodes, setEdges]);
 
   const selectedElb = elbs.find((e) => e.arn === selected);
 
@@ -147,13 +196,17 @@ function Dashboard() {
                 ⚙ Users
               </button>
             )}
-            <div className="user-chip">
+            <button
+              className="user-chip"
+              onClick={() => setShowAccount(true)}
+              title="Account settings"
+            >
               <span className="user-avatar">{user?.username?.[0]?.toUpperCase()}</span>
               <div className="user-meta">
                 <span className="user-name">{user?.username}</span>
                 <span className={`role-badge ${user?.role}`}>{user?.role}</span>
               </div>
-            </div>
+            </button>
             <button className="logout-btn" onClick={logout} title="Sign out">
               ⎋
             </button>
@@ -190,6 +243,8 @@ function Dashboard() {
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onNodeMouseEnter={onNodeEnter}
+          onNodeMouseLeave={onNodeLeave}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.2 }}
@@ -224,6 +279,7 @@ function Dashboard() {
       )}
 
       {showUsers && <UsersModal onClose={() => setShowUsers(false)} />}
+      {showAccount && <AccountModal onClose={() => setShowAccount(false)} />}
     </div>
   );
 }

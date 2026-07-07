@@ -40,6 +40,18 @@ export function countAdmins() {
   return db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get().n;
 }
 
+export function changePassword(userId, current, next) {
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!u || !verifyPassword(current, u.password_hash))
+    throw new Error('current password is incorrect');
+  if (String(next || '').length < 6)
+    throw new Error('new password must be at least 6 characters');
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+    hashPassword(next),
+    userId
+  );
+}
+
 // ---- auth flows ----
 export function login(username, password) {
   const u = findByUsername(String(username || '').trim());

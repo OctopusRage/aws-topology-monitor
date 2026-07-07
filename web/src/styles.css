@@ -130,7 +130,12 @@ html, body, #root {
   padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
 }
 .users-btn:hover { background: var(--panel-2); border-color: var(--accent-2); }
-.user-chip { display: flex; align-items: center; gap: 8px; padding: 4px 6px; }
+.user-chip {
+  display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px;
+  background: transparent; border: 1px solid transparent; border-radius: 10px;
+  cursor: pointer; color: inherit;
+}
+.user-chip:hover { background: var(--node); border-color: var(--node-border); }
 .user-avatar {
   width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
   background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #fff;
@@ -214,6 +219,19 @@ html, body, #root {
   z-index: 4; pointer-events: none;
 }
 .react-flow__renderer { background: var(--bg); }
+
+/* ---------- Hover highlight ---------- */
+.react-flow__node { transition: opacity .16s ease, filter .16s ease; }
+.react-flow__node.dimmed { opacity: 0.13; filter: grayscale(0.3); }
+.react-flow__node.hl { opacity: 1; }
+.react-flow__edge { transition: opacity .16s ease; }
+.react-flow__edge.dimmed { opacity: 0.06; }
+.react-flow__edge.hl .react-flow__edge-path { stroke-width: 2.6px; opacity: 0.95 !important; }
+
+/* ---------- Account modal ---------- */
+.account-modal { width: min(420px, 94vw); }
+.account-form { display: flex; flex-direction: column; gap: 14px; padding: 20px 24px 24px; }
+.account-ok { background: rgba(56,211,159,.14); color: var(--green); padding: 9px 12px; border-radius: 8px; font-size: 12px; }
 
 /* ---------- Nodes ---------- */
 .node {

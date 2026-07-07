@@ -49,6 +49,16 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json(req.user);
 });
 
+app.post('/api/auth/password', requireAuth, (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  try {
+    users.changePassword(req.user.id, currentPassword, newPassword);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: String(err.message || err) });
+  }
+});
+
 // ── User management (admin only) ─────────────────────────────────────────────
 app.get('/api/users', requireAuth, requireAdmin, (_req, res) => {
   res.json(users.listUsers());
