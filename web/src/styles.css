@@ -607,6 +607,8 @@ button.pw-gen:hover { border-color: var(--accent-2); }
 .edge-delete:hover { opacity: 1; background: var(--red); color: #fff; border-color: var(--red); }
 
 /* ELB node */
+.elb-node, .nn-elb { cursor: pointer; }
+.elb-node:hover, .nn-elb:hover { filter: brightness(1.12); }
 .elb-node {
   width: 300px;
   display: flex;
@@ -865,6 +867,36 @@ button.pw-gen:hover { border-color: var(--accent-2); }
 .metric-chart { margin-top: 4px; }
 
 /* ---------- Top SQL (RDS) ---------- */
+/* ---------- ALB listener rules modal ---------- */
+.rules-modal { width: min(760px, 96vw); }
+.rules-body { padding: 8px 24px 24px; max-height: 62vh; overflow-y: auto; }
+.rules-listener { margin-top: 16px; }
+.rules-listener-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }
+.rules-proto {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--accent);
+  background: rgba(255,109,90,.12); padding: 2px 8px; border-radius: 6px;
+}
+.rules-port { font-size: 13px; font-weight: 700; color: var(--text); }
+.rules-count { font-size: 11px; color: var(--muted); margin-left: auto; }
+.rules-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rules-table th {
+  text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--node-border);
+}
+.rules-table td { padding: 9px 10px; border-bottom: 1px solid var(--node-border); vertical-align: top; }
+.rules-table td.rule-prio, .rules-table th.rule-prio { width: 54px; color: var(--muted); font-family: ui-monospace, monospace; }
+.rules-table tr.rule-default td { color: var(--muted); }
+.rule-cond { display: flex; gap: 6px; margin: 1px 0; flex-wrap: wrap; }
+.rule-field { color: var(--accent-2); font-weight: 600; white-space: nowrap; }
+.rule-vals { color: var(--text); font-family: ui-monospace, monospace; font-size: 11.5px; word-break: break-word; }
+.rule-any { color: var(--muted); font-style: italic; }
+.rule-action { color: var(--text); }
+.rule-tg {
+  color: var(--green); font-weight: 600; font-family: ui-monospace, monospace; font-size: 11.5px;
+  margin-left: 2px;
+}
+.rule-tg:not(:last-child)::after { content: ', '; color: var(--muted); font-weight: 400; }
+
 .topsql { padding: 4px 24px 24px; }
 .topsql .node-kicker { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .topsql-table { width: 100%; border-collapse: collapse; font-size: 12px; }

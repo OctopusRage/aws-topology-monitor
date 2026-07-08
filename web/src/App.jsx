@@ -18,6 +18,7 @@ import { nodeTypes as gridNodeTypes } from './components/nodes.jsx';
 import { neuralNodeTypes } from './components/neuralNodes.jsx';
 import { radialNodeTypes } from './components/radialNodes.jsx';
 import MetricsModal from './components/MetricsModal.jsx';
+import AlbRulesModal from './components/AlbRulesModal.jsx';
 import Login from './components/Login.jsx';
 import UsersModal from './components/UsersModal.jsx';
 import AccountModal from './components/AccountModal.jsx';
@@ -84,6 +85,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTg, setActiveTg] = useState(null);
+  const [activeElb, setActiveElb] = useState(null); // { lbArn, name } for the rules modal
   const [viewMode, setViewMode] = useState('neural'); // 'neural' | 'radial' | 'grid'
   const [modeUnlocked, setModeUnlocked] = useState(false); // override a saved view's layout lock
 
@@ -963,6 +965,17 @@ function Dashboard() {
     hoverClear.current = setTimeout(() => setHoveredTg(null), 60);
   }, []);
 
+  // Click the ELB node → show its listener rules.
+  const onNodeClick = useCallback(
+    (_, node) => {
+      if (ELB_TYPES.includes(node.type)) {
+        const name = elbs.find((e) => e.arn === node.id)?.name || topology?.loadBalancer?.name;
+        setActiveElb({ lbArn: node.id, name });
+      }
+    },
+    [elbs, topology]
+  );
+
   // Apply dim/highlight classes to nodes + edges based on the hovered group.
   useEffect(() => {
     setNodes((nds) =>
@@ -1218,6 +1231,7 @@ function Dashboard() {
           onEdgesChange={onEdgesChange}
           onNodeMouseEnter={onNodeEnter}
           onNodeMouseLeave={onNodeLeave}
+          onNodeClick={onNodeClick}
           onNodeDragStop={onNodeDragStop}
           onConnect={onConnect}
           onEdgesDelete={onEdgesDelete}
@@ -1252,6 +1266,14 @@ function Dashboard() {
           lbArn={activeTg.lbArn ?? selected}
           defaultSource={activeTg.defaultSource}
           onClose={() => setActiveTg(null)}
+        />
+      )}
+
+      {activeElb && (
+        <AlbRulesModal
+          lbArn={activeElb.lbArn}
+          name={activeElb.name}
+          onClose={() => setActiveElb(null)}
         />
       )}
 

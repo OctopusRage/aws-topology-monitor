@@ -5,6 +5,8 @@ import {
   DescribeLoadBalancersCommand,
   DescribeTargetGroupsCommand,
   DescribeTargetHealthCommand,
+  DescribeListenersCommand,
+  DescribeRulesCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import { EC2Client, DescribeInstancesCommand } from '@aws-sdk/client-ec2';
 import { RDSClient, DescribeDBInstancesCommand } from '@aws-sdk/client-rds';
@@ -104,10 +106,79 @@ async function buildTargetGroup(tg) {
   };
 }
 
+// Target group name from its ARN (…:targetgroup/NAME/ID) without another call.
+const tgNameFromArn = (arn) => (arn ? arn.split('/')[1] || arn : '');
+
+function ruleConditionText(c) {
+  const f = c.Field;
+  if (f === 'host-header') return { field: 'Host', values: c.HostHeaderConfig?.Values || c.Values || [] };
+  if (f === 'path-pattern') return { field: 'Path', values: c.PathPatternConfig?.Values || c.Values || [] };
+  if (f === 'http-header')
+    return { field: `Header: ${c.HttpHeaderConfig?.HttpHeaderName || ''}`, values: c.HttpHeaderConfig?.Values || [] };
+  if (f === 'http-request-method') return { field: 'Method', values: c.HttpRequestMethodConfig?.Values || [] };
+  if (f === 'query-string')
+    return { field: 'Query', values: (c.QueryStringConfig?.Values || []).map((kv) => `${kv.Key}=${kv.Value}`) };
+  if (f === 'source-ip') return { field: 'Source IP', values: c.SourceIpConfig?.Values || [] };
+  return { field: f, values: c.Values || [] };
+}
+
+function ruleActionText(a) {
+  if (a.Type === 'forward') {
+    const groups = a.ForwardConfig?.TargetGroups?.length
+      ? a.ForwardConfig.TargetGroups
+      : a.TargetGroupArn
+      ? [{ TargetGroupArn: a.TargetGroupArn }]
+      : [];
+    return {
+      type: 'forward',
+      targets: groups.map((g) => ({ name: tgNameFromArn(g.TargetGroupArn), weight: g.Weight })),
+    };
+  }
+  if (a.Type === 'redirect') {
+    const r = a.RedirectConfig || {};
+    return {
+      type: 'redirect',
+      detail: `${r.Protocol || '#{protocol}'}://${r.Host || '#{host}'}:${r.Port || '#{port}'}${
+        r.Path || '/#{path}'
+      }${r.StatusCode ? ` (${r.StatusCode})` : ''}`,
+    };
+  }
+  if (a.Type === 'fixed-response') {
+    const r = a.FixedResponseConfig || {};
+    return { type: 'fixed-response', detail: `${r.StatusCode || ''} ${r.ContentType || ''}`.trim() };
+  }
+  if (a.Type === 'authenticate-cognito' || a.Type === 'authenticate-oidc')
+    return { type: a.Type, detail: 'authenticate' };
+  return { type: a.Type, detail: '' };
+}
+
 export const awsProvider = {
   async listLoadBalancers() {
     const out = await elbv2.send(new DescribeLoadBalancersCommand({}));
     return (out.LoadBalancers || []).map(mapLb);
+  },
+
+  // Listener rules for a load balancer, grouped by listener (protocol:port).
+  async getListenerRules(lbArn) {
+    const ls = await elbv2.send(new DescribeListenersCommand({ LoadBalancerArn: lbArn }));
+    const listeners = [];
+    for (const l of ls.Listeners || []) {
+      const rs = await elbv2.send(new DescribeRulesCommand({ ListenerArn: l.ListenerArn }));
+      const rules = (rs.Rules || [])
+        .map((r) => ({
+          priority: r.IsDefault ? 'default' : r.Priority,
+          isDefault: !!r.IsDefault,
+          conditions: (r.Conditions || []).map(ruleConditionText),
+          actions: (r.Actions || []).map(ruleActionText),
+        }))
+        .sort((a, b) => {
+          if (a.isDefault) return 1;
+          if (b.isDefault) return -1;
+          return Number(a.priority) - Number(b.priority);
+        });
+      listeners.push({ listenerArn: l.ListenerArn, protocol: l.Protocol, port: l.Port, rules });
+    }
+    return { lbArn, listeners };
   },
 
   async getTopology(lbArn) {

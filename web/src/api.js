@@ -71,6 +71,7 @@ export const api = {
   health: () => get('/api/health'),
   listElbs: () => get('/api/elbs'),
   topology: (lbArn) => get(`/api/topology?lbArn=${encodeURIComponent(lbArn)}`),
+  elbRules: (lbArn) => get(`/api/elb/rules?lbArn=${encodeURIComponent(lbArn)}`),
   targetGroupMetrics: (tgArn, range, lbArn, source = 'cloudwatch') =>
     get(
       `/api/metrics/target-group?tgArn=${encodeURIComponent(tgArn)}&range=${range}&source=${source}` +

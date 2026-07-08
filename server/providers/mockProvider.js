@@ -78,6 +78,56 @@ export const mockProvider = {
     return LOAD_BALANCERS.map(({ targetGroups, ...lb }) => lb);
   },
 
+  async getListenerRules(lbArn) {
+    const lb = LOAD_BALANCERS.find((l) => l.arn === lbArn);
+    const tgs = lb?.targetGroups || [];
+    const first = tgs[0]?.name || 'web-tg';
+    const second = tgs[1]?.name || first;
+    return {
+      lbArn,
+      listeners: [
+        {
+          listenerArn: `${lbArn}/listener/443`,
+          protocol: 'HTTPS',
+          port: 443,
+          rules: [
+            {
+              priority: '1',
+              isDefault: false,
+              conditions: [{ field: 'Path', values: ['/api/*'] }],
+              actions: [{ type: 'forward', targets: [{ name: first }] }],
+            },
+            {
+              priority: '2',
+              isDefault: false,
+              conditions: [{ field: 'Host', values: ['admin.example.com'] }],
+              actions: [{ type: 'forward', targets: [{ name: second }] }],
+            },
+            {
+              priority: 'default',
+              isDefault: true,
+              conditions: [],
+              actions: [{ type: 'forward', targets: [{ name: first }] }],
+            },
+          ],
+        },
+        {
+          listenerArn: `${lbArn}/listener/80`,
+          protocol: 'HTTP',
+          port: 80,
+          rules: [
+            {
+              priority: 'default',
+              isDefault: true,
+              conditions: [],
+              actions: [{ type: 'redirect', detail: 'HTTPS://#{host}:443/#{path} (HTTP_301)' }],
+            },
+          ],
+        },
+      ],
+    };
+  },
+
   async getTopology(lbArn) {
     const lb = LOAD_BALANCERS.find((l) => l.arn === lbArn);
     if (!lb) return null;

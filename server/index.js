@@ -240,6 +240,17 @@ app.get('/api/elbs', requireAuth, async (_req, res) => {
   }
 });
 
+// Listener rules for a load balancer (shown when the ELB node is clicked).
+app.get('/api/elb/rules', requireAuth, async (req, res) => {
+  const lbArn = req.query.lbArn;
+  if (!lbArn) return res.status(400).json({ error: 'lbArn is required' });
+  try {
+    res.json(await provider.getListenerRules(lbArn));
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 // 2+3) Topology for a chosen ELB: target groups, each with its servers.
 app.get('/api/topology', requireAuth, async (req, res) => {
   const lbArn = req.query.lbArn;
