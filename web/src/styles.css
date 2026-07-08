@@ -539,6 +539,26 @@ html, body, #root {
   background: var(--accent);
   border: 2px solid var(--bg);
 }
+/* 4-side connection dots — hidden until the node is hovered, so a wire can
+   leave/enter from the nearest side without cluttering the canvas. */
+.conn-dot {
+  width: 9px; height: 9px; background: var(--accent); border: 2px solid var(--bg);
+  opacity: 0; transition: opacity .12s;
+}
+.react-flow__node:hover .conn-dot,
+.react-flow__node.selected .conn-dot { opacity: 1; }
+.react-flow__node.anno-box-node .conn-dot { pointer-events: all; }
+
+/* ✕ to delete a manual connection (also selectable + Delete key) */
+.edge-delete {
+  position: absolute; pointer-events: all;
+  width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center; line-height: 1; font-size: 10px;
+  background: var(--node); color: var(--muted);
+  border: 1px solid var(--node-border); cursor: pointer;
+  opacity: .55; transition: opacity .12s, background .12s, color .12s;
+}
+.edge-delete:hover { opacity: 1; background: var(--red); color: #fff; border-color: var(--red); }
 
 /* ELB node */
 .elb-node {

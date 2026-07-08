@@ -11,6 +11,15 @@ const dbPath = process.env.DB_PATH || join(__dirname, 'data.db');
 
 export const db = new DatabaseSync(dbPath);
 
+// Tuning for small / slow-disk servers. WAL lets the per-request auth reads run
+// concurrently with writes instead of blocking on a whole-db lock; NORMAL drops
+// the fsync-per-transaction that makes each save slow on cheap disks; the busy
+// timeout waits briefly for a lock instead of erroring. This removes most of the
+// "lag when saving / creating a user" on constrained hosts.
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA synchronous = NORMAL');
+db.exec('PRAGMA busy_timeout = 5000');
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

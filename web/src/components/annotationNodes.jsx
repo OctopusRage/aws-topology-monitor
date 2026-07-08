@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { NodeResizer, Handle, Position } from 'reactflow';
+import { NodeResizer } from 'reactflow';
 import '@reactflow/node-resizer/dist/style.css';
+import ConnectHandles from './ConnectHandles.jsx';
 
 // A resizable grouping frame (dotted or solid). The frame body is click-through
 // (pointer-events: none in CSS) so nodes underneath stay interactive — you grab
@@ -21,9 +22,7 @@ export function AnnotationBox({ data }) {
           onResize({ width: p.width, height: p.height, position: { x: p.x, y: p.y } })
         }
       />
-      {/* Offset off the vertical middle so they don't sit on the resize edge-handles. */}
-      <Handle type="target" position={Position.Left} className="rf-handle anno-conn" style={{ top: '28%' }} />
-      <Handle type="source" position={Position.Right} className="rf-handle anno-conn" style={{ top: '72%' }} />
+      <ConnectHandles className="anno-conn" />
       <div className={`anno-box ${dashed ? 'dashed' : 'solid'}`}>
         {/* Title bar: only the grip shows when there's no label; the input +
             controls appear on hover so an unlabeled frame stays clean. */}

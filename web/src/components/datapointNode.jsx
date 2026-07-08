@@ -1,4 +1,4 @@
-import { Handle, Position } from 'reactflow';
+import ConnectHandles from './ConnectHandles.jsx';
 
 export const DP_TYPES = {
   rds: { label: 'RDS', icon: '🛢', accent: '#4a90e2' },
@@ -19,8 +19,7 @@ export function DatapointNode({ data }) {
       onClick={onOpen}
       title="Click to view resource usage"
     >
-      {/* optional connection handles (standalone by default) */}
-      <Handle type="target" position={Position.Left} className="rf-handle dp-handle" />
+      <ConnectHandles />
       <div className="dp-icon" style={{ background: `${meta.accent}22`, color: meta.accent }}>
         {meta.icon}
       </div>
@@ -40,7 +39,6 @@ export function DatapointNode({ data }) {
       >
         ✕
       </button>
-      <Handle type="source" position={Position.Right} className="rf-handle dp-handle" />
     </div>
   );
 }
@@ -50,8 +48,7 @@ export function DatapointGroupNode({ data }) {
   return (
     <div className="dp-group">
       {/* connection handles so the whole group can be wired to other nodes */}
-      <Handle type="target" position={Position.Left} className="rf-handle dp-group-conn" />
-      <Handle type="source" position={Position.Right} className="rf-handle dp-group-conn" />
+      <ConnectHandles className="dp-group-conn" />
       <div className="dp-group-label">{data?.name || 'DATA POINTS'}</div>
       {data?.onRemove && (
         <button

@@ -3,10 +3,12 @@ import ReactFlow, {
   Background,
   Controls,
   MiniMap,
+  ConnectionMode,
   useNodesState,
   useEdgesState,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import DeletableEdge from './components/DeletableEdge.jsx';
 import { api } from './api.js';
 import { buildGraph, buildNeuralGraph, buildRadialGraph } from './layout.js';
 import { nodeTypes as gridNodeTypes } from './components/nodes.jsx';
@@ -62,6 +64,8 @@ const nodeTypes = {
   ...standaloneTgNodeTypes,
   ...annotationNodeTypes,
 };
+
+const edgeTypes = { deletable: DeletableEdge };
 
 function Dashboard() {
   const { user, logout, patchUser } = useAuth();
@@ -350,17 +354,41 @@ function Dashboard() {
       id.startsWith('stg:') ||
       id.startsWith('anno:');
     if (!addable(params.source) && !addable(params.target)) return;
+    const sh = params.sourceHandle || null;
+    const th = params.targetHandle || null;
     setConnections((cs) =>
-      cs.some((c) => c.source === params.source && c.target === params.target)
+      // Allow several wires between the same pair (as long as the handles differ),
+      // so connecting two nodes more than once works.
+      cs.some(
+        (c) =>
+          c.source === params.source &&
+          c.target === params.target &&
+          (c.sourceHandle || null) === sh &&
+          (c.targetHandle || null) === th
+      )
         ? cs
-        : [...cs, { source: params.source, target: params.target }]
+        : [...cs, { source: params.source, target: params.target, sourceHandle: sh, targetHandle: th }]
     );
   }, []);
 
-  // Delete a manual connection (select the edge + press Backspace/Delete).
+  // Delete a manual connection (via the ✕ on the edge, or select + Delete key).
   const onEdgesDelete = useCallback((deleted) => {
     const keys = new Set(deleted.map((e) => `${e.source}->${e.target}`));
     setConnections((cs) => cs.filter((c) => !keys.has(`${c.source}->${c.target}`)));
+  }, []);
+
+  const removeConnection = useCallback((conn) => {
+    setConnections((cs) =>
+      cs.filter(
+        (c) =>
+          !(
+            c.source === conn.source &&
+            c.target === conn.target &&
+            (c.sourceHandle || null) === (conn.sourceHandle || null) &&
+            (c.targetHandle || null) === (conn.targetHandle || null)
+          )
+      )
+    );
   }, []);
 
   // ── saved views ──
@@ -650,12 +678,15 @@ function Dashboard() {
       dpNodes.push({ ...dpNode(dp), position: dp.position || { x: -440, y: -240 } });
     }
     const connEdges = connections.map((c, i) => ({
-      id: `conn:${i}:${c.source}->${c.target}`,
+      id: `conn:${i}:${c.source}:${c.sourceHandle || ''}->${c.target}:${c.targetHandle || ''}`,
       source: c.source,
       target: c.target,
-      type: 'default',
+      sourceHandle: c.sourceHandle || undefined,
+      targetHandle: c.targetHandle || undefined,
+      type: 'deletable',
       className: 'dp-conn',
       deletable: true,
+      data: { onDelete: () => removeConnection(c) },
       markerEnd: { type: 'arrowclosed', color: '#8a8fa3', width: 16, height: 16 },
       style: { stroke: '#8a8fa3', strokeWidth: 1.6, strokeDasharray: '5 5', opacity: 0.7 },
     }));
@@ -812,6 +843,7 @@ function Dashboard() {
     datapoints,
     dataGroups,
     connections,
+    removeConnection,
     removeDatapoint,
     removeDataGroup,
     instanceGroups,
@@ -1117,6 +1149,8 @@ function Dashboard() {
           onConnect={onConnect}
           onEdgesDelete={onEdgesDelete}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          connectionMode={ConnectionMode.Loose}
           minZoom={0.2}
           maxZoom={1.75}
           proOptions={{ hideAttribution: true }}

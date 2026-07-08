@@ -2,7 +2,7 @@
 // pool) dropped on the canvas, NOT wired to the viewed ELB. Its instances are
 // fetched live so ASG scaling reflects automatically. Server children reuse the
 // grid 'server' node type.
-import { Handle, Position } from 'reactflow';
+import ConnectHandles from './ConnectHandles.jsx';
 
 export function StandaloneTgNode({ data }) {
   const { tg, healthy, total, onOpen, onRemove } = data;
@@ -10,8 +10,7 @@ export function StandaloneTgNode({ data }) {
   const ok = !empty && healthy === total;
   return (
     <div className="stg-node">
-      <Handle type="target" position={Position.Left} className="rf-handle dp-handle" />
-      <Handle type="source" position={Position.Right} className="rf-handle dp-handle" />
+      <ConnectHandles />
       <div className="stg-header" onClick={onOpen} title="Click to open monitoring metrics">
         <div className="stg-header-left">
           <div className="node-icon stg-icon">⊟</div>

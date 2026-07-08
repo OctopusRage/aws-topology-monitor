@@ -1,6 +1,6 @@
 // Standalone instance groups — EC2 instances (e.g. workers) that aren't behind
 // a target group. Rendered as a container holding clickable instance nodes.
-import { Handle, Position } from 'reactflow';
+import ConnectHandles from './ConnectHandles.jsx';
 
 const stateColor = {
   running: '#38d39f',
@@ -14,8 +14,7 @@ export function InstanceGroupNode({ data }) {
   const { name, count, onRemove } = data;
   return (
     <div className="ig-node">
-      <Handle type="target" position={Position.Left} className="rf-handle dp-handle" />
-      <Handle type="source" position={Position.Right} className="rf-handle dp-handle" />
+      <ConnectHandles />
       <div className="ig-header">
         <div className="ig-header-left">
           <span className="node-icon ig-icon">🖥</span>
@@ -45,8 +44,7 @@ export function InstanceNode({ data }) {
   const color = stateColor[inst.state] || '#8a8fa3';
   return (
     <div className="inst-node" onClick={onOpen} title="Click to view resource usage">
-      <Handle type="target" position={Position.Left} className="rf-handle dp-handle" />
-      <Handle type="source" position={Position.Right} className="rf-handle dp-handle" />
+      <ConnectHandles />
       <span className="inst-status" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
       <div className="inst-body">
         <div className="inst-name">{inst.name}</div>
