@@ -65,6 +65,7 @@ function Dashboard() {
   const [error, setError] = useState(null);
   const [activeTg, setActiveTg] = useState(null);
   const [viewMode, setViewMode] = useState('neural'); // 'neural' | 'radial' | 'grid'
+  const [modeUnlocked, setModeUnlocked] = useState(false); // override a saved view's layout lock
 
   // data points + saved views
   const [datapoints, setDatapoints] = useState([]);
@@ -89,7 +90,9 @@ function Dashboard() {
   const savedOverlayRef = useRef(EMPTY_OVERLAY_SIG);
   const currentOverlaySig = () =>
     overlaySignature({ datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs });
-  const hasUnsavedWork = () => currentOverlaySig() !== savedOverlayRef.current;
+  // Switching a saved view's layout (once unlocked) is also unsaved work.
+  const modeChanged = () => !!currentView?.viewMode && currentView.viewMode !== viewMode;
+  const hasUnsavedWork = () => currentOverlaySig() !== savedOverlayRef.current || modeChanged();
 
   const openMetrics = useCallback(
     (tg, lbArn = null, defaultSource = 'cloudwatch') =>
@@ -215,17 +218,20 @@ function Dashboard() {
       setInstanceGroups([]);
       setStandaloneTGs([]);
       savedOverlayRef.current = EMPTY_OVERLAY_SIG;
+      setModeUnlocked(false);
       return;
     }
     try {
       const v = await api.getView(Number(id));
       setSelected(v.baseLbArn);
+      if (v.data?.viewMode) setViewMode(v.data.viewMode);
       setDatapoints(v.data?.datapoints || []);
       setDpGroupPos(v.data?.datapointGroupPos || null);
       setConnections(v.data?.connections || []);
       setInstanceGroups(v.data?.instanceGroups || []);
       setStandaloneTGs(v.data?.standaloneTargetGroups || []);
-      setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy });
+      setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy, viewMode: v.data?.viewMode || null });
+      setModeUnlocked(false); // each opened view starts locked to its layout
       // Baseline = what we just loaded, so it isn't flagged as unsaved work.
       savedOverlayRef.current = overlaySignature({
         datapoints: v.data?.datapoints,
@@ -250,11 +256,13 @@ function Dashboard() {
     setInstanceGroups([]);
     setStandaloneTGs([]);
     savedOverlayRef.current = EMPTY_OVERLAY_SIG;
+    setModeUnlocked(false);
   }, []);
 
   const saveView = useCallback(async () => {
     try {
       const data = {
+        viewMode,
         datapoints,
         datapointGroupPos: dpGroupPos,
         connections,
@@ -271,19 +279,22 @@ function Dashboard() {
           baseLbArn: selected,
           data,
         });
+        setCurrentView((cv) => (cv ? { ...cv, viewMode } : cv));
       } else {
         const name = window.prompt('Save this view as:', 'My view');
         if (!name) return;
         const created = await api.createView({ name, baseLbArn: selected, data });
-        setCurrentView({ id: created.id, name: created.name, createdBy: created.createdBy });
+        setCurrentView({ id: created.id, name: created.name, createdBy: created.createdBy, viewMode });
       }
-      // Everything is now persisted — this becomes the clean baseline.
+      // Everything is now persisted — this becomes the clean baseline; the saved
+      // mode is the current one, so re-lock the layout.
       savedOverlayRef.current = currentOverlaySig();
+      setModeUnlocked(false);
       await loadViewsList();
     } catch (e) {
       setError(String(e.message || e));
     }
-  }, [currentView, selected, datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, loadViewsList]);
+  }, [currentView, selected, viewMode, datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, loadViewsList]);
 
   // Which view is "active" right now — a saved view, or just the base ELB.
   const activeRef = currentView?.id
@@ -667,24 +678,40 @@ function Dashboard() {
 
         <div className="controls">
           <div className="view-switch">
-            <button
-              className={viewMode === 'neural' ? 'active' : ''}
-              onClick={() => setViewMode('neural')}
-            >
-              ⌘ Neural
-            </button>
-            <button
-              className={viewMode === 'radial' ? 'active' : ''}
-              onClick={() => setViewMode('radial')}
-            >
-              ◎ Radial
-            </button>
-            <button
-              className={viewMode === 'grid' ? 'active' : ''}
-              onClick={() => setViewMode('grid')}
-            >
-              ▦ Grid
-            </button>
+            {[
+              { key: 'neural', label: '⌘ Neural' },
+              { key: 'radial', label: '◎ Radial' },
+              { key: 'grid', label: '▦ Grid' },
+            ].map(({ key, label }) => {
+              // A saved view locks its layout to its saved mode — unless the user
+              // opens the lock (🔒) to change it and re-save.
+              const layoutLocked = !!currentView?.viewMode && !modeUnlocked;
+              const locked = layoutLocked && viewMode !== key;
+              return (
+                <button
+                  key={key}
+                  className={viewMode === key ? 'active' : ''}
+                  disabled={locked}
+                  title={locked ? `Locked to "${viewMode}" — click 🔒 to change` : undefined}
+                  onClick={() => setViewMode(key)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            {!!currentView?.viewMode && (
+              <button
+                className={`view-lock ${modeUnlocked ? 'open' : ''}`}
+                onClick={() => setModeUnlocked((v) => !v)}
+                title={
+                  modeUnlocked
+                    ? 'Layout unlocked — switch mode, then Save to keep it'
+                    : 'Layout locked to this saved view — click to change'
+                }
+              >
+                {modeUnlocked ? '🔓' : '🔒'}
+              </button>
+            )}
           </div>
 
           <label className="select-wrap">

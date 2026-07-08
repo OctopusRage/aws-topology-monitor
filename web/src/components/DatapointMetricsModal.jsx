@@ -9,8 +9,35 @@ const SOURCES = [
   { key: 'prometheus', label: 'node_exporter' },
 ];
 
+// Copy text to the clipboard, falling back to execCommand for non-secure
+// (http) contexts where navigator.clipboard is unavailable.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to legacy path */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function TopSql({ dbInstanceId, range }) {
   const [tq, setTq] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
   useEffect(() => {
     let alive = true;
     setTq(null);
@@ -22,6 +49,13 @@ function TopSql({ dbInstanceId, range }) {
       alive = false;
     };
   }, [dbInstanceId, range]);
+
+  const onCopy = useCallback(async (key, sql) => {
+    if (await copyText(sql)) {
+      setCopiedId(key);
+      setTimeout(() => setCopiedId((c) => (c === key ? null : c)), 1400);
+    }
+  }, []);
 
   if (!tq) return <div className="topsql"><div className="node-kicker">TOP SQL BY DB LOAD · loading…</div></div>;
   const queries = tq.queries || [];
@@ -49,11 +83,19 @@ function TopSql({ dbInstanceId, range }) {
           </tr>
         </thead>
         <tbody>
-          {queries.map((q, i) => (
-            <tr key={q.id || i}>
+          {queries.map((q, i) => {
+            const key = q.id || i;
+            const copied = copiedId === key;
+            return (
+            <tr key={key}>
               <td className="rank">{i + 1}</td>
-              <td className="sql">
-                <code title={q.sql}>{q.sql}</code>
+              <td
+                className={`sql${copied ? ' copied' : ''}`}
+                onClick={() => onCopy(key, q.sql)}
+                title="Click to copy the full query"
+              >
+                <code>{q.sql}</code>
+                <span className="sql-copy">{copied ? '✓ copied' : '⧉ copy'}</span>
               </td>
               <td className="num load">
                 <span className="load-bar" style={{ width: `${(q.load / maxLoad) * 100}%` }} />
@@ -61,7 +103,8 @@ function TopSql({ dbInstanceId, range }) {
               </td>
               {hasCalls && <td className="num">{q.calls != null ? q.calls.toLocaleString() : '—'}</td>}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
