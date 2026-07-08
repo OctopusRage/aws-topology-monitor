@@ -69,6 +69,7 @@ const edgeTypes = { deletable: DeletableEdge };
 
 function Dashboard() {
   const { user, logout, patchUser } = useAuth();
+  const isAdmin = user?.role === 'admin'; // only admins author/save views
   const [showUsers, setShowUsers] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [hoveredTg, setHoveredTg] = useState(null);
@@ -113,7 +114,10 @@ function Dashboard() {
     overlaySignature({ datapoints, dataGroups, connections, instanceGroups, standaloneTGs, annotations, nodePositions });
   // Switching a saved view's layout (once unlocked) is also unsaved work.
   const modeChanged = () => !!currentView?.viewMode && currentView.viewMode !== viewMode;
-  const hasUnsavedWork = () => currentOverlaySig() !== savedOverlayRef.current || modeChanged();
+  // Only admins can save, so only they get the "unsaved work" guards; a regular
+  // user's dragging is always throwaway and shouldn't warn them.
+  const hasUnsavedWork = () =>
+    isAdmin && (currentOverlaySig() !== savedOverlayRef.current || modeChanged());
 
   const openMetrics = useCallback(
     (tg, lbArn = null, defaultSource = 'cloudwatch') =>
@@ -1110,24 +1114,28 @@ function Dashboard() {
             >
               {isDefault ? '★' : '☆'} Default
             </button>
-            <button className="view-action" onClick={() => setShowAddDp(true)}>
-              ＋ Data point
-            </button>
-            <button className="view-action" onClick={() => setShowAddInstances(true)}>
-              ＋ Instances
-            </button>
-            <button className="view-action" onClick={() => setShowAddTG(true)}>
-              ＋ Target group
-            </button>
-            <button className="view-action" onClick={() => addAnnotation('box')} title="Add a grouping frame">
-              ＋ Frame
-            </button>
-            <button className="view-action" onClick={() => addAnnotation('label')} title="Add a text label">
-              ＋ Label
-            </button>
-            <button className="view-action save" onClick={saveView}>
-              💾 {currentView?.id ? 'Save' : 'Save as…'}
-            </button>
+            {isAdmin && (
+              <>
+                <button className="view-action" onClick={() => setShowAddDp(true)}>
+                  ＋ Data point
+                </button>
+                <button className="view-action" onClick={() => setShowAddInstances(true)}>
+                  ＋ Instances
+                </button>
+                <button className="view-action" onClick={() => setShowAddTG(true)}>
+                  ＋ Target group
+                </button>
+                <button className="view-action" onClick={() => addAnnotation('box')} title="Add a grouping frame">
+                  ＋ Frame
+                </button>
+                <button className="view-action" onClick={() => addAnnotation('label')} title="Add a text label">
+                  ＋ Label
+                </button>
+                <button className="view-action save" onClick={saveView}>
+                  💾 {currentView?.id ? 'Save' : 'Save as…'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

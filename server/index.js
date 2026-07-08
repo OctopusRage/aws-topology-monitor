@@ -96,6 +96,19 @@ app.post('/api/users', requireAuth, requireAdmin, (req, res) => {
   }
 });
 
+// Admin resets another user's password.
+app.put('/api/users/:id/password', requireAuth, requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const { newPassword } = req.body || {};
+  try {
+    users.adminSetPassword(id, newPassword);
+    res.json({ ok: true });
+  } catch (err) {
+    const code = /not found/.test(err.message) ? 404 : 400;
+    res.status(code).json({ error: String(err.message || err) });
+  }
+});
+
 app.delete('/api/users/:id', requireAuth, requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   if (id === req.user.id)
@@ -163,16 +176,19 @@ app.get('/api/rds/top-queries', requireAuth, async (req, res) => {
   }
 });
 
-// ── Saved views (shared) ─────────────────────────────────────────────────────
-app.get('/api/views', requireAuth, (_req, res) => res.json(viewStore.listViews()));
+// ── Saved views — admins author them; everyone loads them (read-only) ─────────
+app.get('/api/views', requireAuth, (req, res) => res.json(viewStore.listViews(req.user)));
 
 app.get('/api/views/:id', requireAuth, (req, res) => {
   const v = viewStore.getView(Number(req.params.id));
   if (!v) return res.status(404).json({ error: 'view not found' });
+  // Non-admins may only load admin-authored views.
+  if (req.user.role !== 'admin' && v.creatorRole !== 'admin')
+    return res.status(404).json({ error: 'view not found' });
   res.json(v);
 });
 
-app.post('/api/views', requireAuth, (req, res) => {
+app.post('/api/views', requireAuth, requireAdmin, (req, res) => {
   try {
     res.status(201).json(viewStore.createView(req.user, req.body || {}));
   } catch (err) {
@@ -180,7 +196,7 @@ app.post('/api/views', requireAuth, (req, res) => {
   }
 });
 
-app.put('/api/views/:id', requireAuth, (req, res) => {
+app.put('/api/views/:id', requireAuth, requireAdmin, (req, res) => {
   try {
     res.json(viewStore.updateView(Number(req.params.id), req.user, req.body || {}));
   } catch (err) {
@@ -189,7 +205,7 @@ app.put('/api/views/:id', requireAuth, (req, res) => {
   }
 });
 
-app.delete('/api/views/:id', requireAuth, (req, res) => {
+app.delete('/api/views/:id', requireAuth, requireAdmin, (req, res) => {
   try {
     viewStore.deleteView(Number(req.params.id), req.user);
     res.json({ ok: true });

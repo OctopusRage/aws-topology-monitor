@@ -1,5 +1,5 @@
-// Saved views — SHARED across all users. Any logged-in user can see and load
-// them; only the creator or an admin can edit or delete.
+// Saved views — created & edited by admins, visible to everyone (regular users
+// load them read-only). Non-admins only see views authored by an admin.
 import { db } from './db.js';
 
 function parse(row) {
@@ -22,25 +22,39 @@ function parse(row) {
   };
 }
 
-export function listViews() {
-  return db
+export function listViews(user) {
+  const rows = db
     .prepare(
-      `SELECT id, name, base_lb_arn, created_by, created_by_name, updated_at
-       FROM saved_views ORDER BY updated_at DESC`
+      `SELECT v.id, v.name, v.base_lb_arn, v.created_by, v.created_by_name, v.updated_at,
+              u.role AS creator_role
+       FROM saved_views v LEFT JOIN users u ON u.id = v.created_by
+       ORDER BY v.updated_at DESC`
     )
-    .all()
-    .map((r) => ({
-      id: r.id,
-      name: r.name,
-      baseLbArn: r.base_lb_arn,
-      createdBy: r.created_by,
-      createdByName: r.created_by_name,
-      updatedAt: r.updated_at,
-    }));
+    .all();
+  const visible =
+    user?.role === 'admin' ? rows : rows.filter((r) => r.creator_role === 'admin');
+  return visible.map((r) => ({
+    id: r.id,
+    name: r.name,
+    baseLbArn: r.base_lb_arn,
+    createdBy: r.created_by,
+    createdByName: r.created_by_name,
+    updatedAt: r.updated_at,
+  }));
 }
 
 export function getView(id) {
-  return parse(db.prepare('SELECT * FROM saved_views WHERE id = ?').get(id));
+  const row = db
+    .prepare(
+      `SELECT v.*, u.role AS creator_role
+       FROM saved_views v LEFT JOIN users u ON u.id = v.created_by
+       WHERE v.id = ?`
+    )
+    .get(id);
+  if (!row) return null;
+  const v = parse(row);
+  v.creatorRole = row.creator_role;
+  return v;
 }
 
 export function createView(user, { name, baseLbArn, data }) {

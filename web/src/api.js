@@ -65,6 +65,8 @@ export const api = {
   createUser: (username, password, role) =>
     post('/api/users', { username, password, role }),
   deleteUser: (id) => del(`/api/users/${id}`),
+  resetUserPassword: (id, newPassword) =>
+    put(`/api/users/${id}/password`, { newPassword }),
   // topology + metrics
   health: () => get('/api/health'),
   listElbs: () => get('/api/elbs'),

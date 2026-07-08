@@ -67,6 +67,20 @@ export function changePassword(userId, current, next) {
   );
 }
 
+// Admin resets another user's password (no current-password check). Existing
+// sessions are revoked so the user must sign in again with the new password.
+export function adminSetPassword(userId, next) {
+  const u = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+  if (!u) throw new Error('user not found');
+  if (String(next || '').length < 6)
+    throw new Error('new password must be at least 6 characters');
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+    hashPassword(next),
+    userId
+  );
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+}
+
 // ---- auth flows ----
 export function login(username, password) {
   const u = findByUsername(String(username || '').trim());

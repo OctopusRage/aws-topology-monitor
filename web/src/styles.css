@@ -165,7 +165,7 @@ html, body, #root {
 /* ---------- Users modal ---------- */
 .users-modal { width: min(680px, 96vw); }
 .user-create { padding: 18px 24px; border-bottom: 1px solid var(--node-border); }
-.user-create-row { display: flex; gap: 8px; margin-top: 10px; }
+.user-create-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .user-create-row input, .user-create-row select {
   background: var(--node); border: 1px solid var(--node-border); border-radius: 8px;
   padding: 9px 11px; color: var(--text); font-size: 13px; outline: none;
@@ -193,6 +193,54 @@ html, body, #root {
 }
 .del-btn:hover:not(:disabled) { color: var(--red); border-color: rgba(255,90,90,.4); }
 .del-btn:disabled { opacity: .4; cursor: not-allowed; }
+.reset-btn {
+  background: transparent; border: 1px solid var(--node-border); color: var(--muted);
+  padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-right: 8px;
+}
+.reset-btn:hover { color: var(--accent-2); border-color: var(--accent-2); }
+
+/* secure-password controls */
+button.pw-gen {
+  background: var(--node); color: var(--text); border: 1px solid var(--node-border);
+  border-radius: 8px; padding: 9px 12px; font-size: 12px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+button.pw-gen:hover { border-color: var(--accent-2); }
+.pw-copy {
+  margin-top: 8px; background: transparent; border: none; cursor: pointer;
+  color: var(--muted); font-size: 11px; padding: 2px 0;
+}
+.pw-copy:hover { color: var(--text); }
+.pw-copy.done { color: var(--green); }
+
+/* reset-password panel */
+.pw-reset-backdrop {
+  position: fixed; inset: 0; background: rgba(8, 9, 14, 0.6);
+  display: grid; place-items: center; z-index: 100;
+}
+.pw-reset {
+  width: min(420px, 90%); background: var(--bg); border: 1px solid var(--node-border);
+  border-radius: 14px; padding: 20px 22px; box-shadow: 0 24px 60px rgba(0,0,0,.5);
+}
+.pw-reset-user { font-size: 14px; margin: 4px 0 14px; }
+.pw-reset-field { display: flex; gap: 8px; align-items: center; }
+.pw-reset-field input {
+  flex: 1; background: var(--node); border: 1px solid var(--node-border); border-radius: 8px;
+  padding: 9px 11px; color: var(--text); font-size: 13px; outline: none;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.pw-reset-field input:focus { border-color: var(--accent-2); }
+.pw-reset-field .pw-copy, .pw-reset-field .pw-gen { margin: 0; }
+.pw-reset-field .pw-copy {
+  border: 1px solid var(--node-border); border-radius: 8px; padding: 9px 11px; color: var(--muted);
+}
+.pw-reset-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.pw-apply {
+  background: var(--accent-2); color: #fff; border: none; border-radius: 8px;
+  padding: 9px 16px; font-weight: 600; font-size: 13px; cursor: pointer;
+}
+.pw-apply:disabled { opacity: .5; cursor: not-allowed; }
+.pw-reset-ok { font-size: 12.5px; color: var(--green); margin-bottom: 12px; line-height: 1.5; }
 
 /* ---------- Summary strip ---------- */
 .summary-strip {
