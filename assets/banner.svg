@@ -80,12 +80,10 @@
       <g transform="translate(196,0)"><rect class="chip" x="0" y="0" width="138" height="30" rx="15"/><text class="chipt" x="16" y="20">Save · Share · Export</text></g>
     </g>
 
-    <!-- live sparkline -->
+    <!-- live indicator -->
     <g transform="translate(72,162)">
       <circle cx="5" cy="1" r="4" fill="#38d39f"/>
       <text class="sub" x="18" y="6" font-size="12.5" fill="#38d39f">live metrics</text>
-      <path class="spark" d="M108 4 L130 -9 L152 3 L174 -13 L196 -3 L218 -17 L240 -6 L262 -15 L284 -8"
-            fill="none" stroke="#38d39f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
   </g>
 
