@@ -369,66 +369,63 @@ button.pw-gen:hover { border-color: var(--accent-2); }
 /* The frame body is click-through so nodes underneath stay interactive; you
    grab it by the title chip and resize via the handles (shown when selected). */
 .react-flow__node.anno-box-node { pointer-events: none; }
-/* Edge lines are invisible, widened hover zones — hovering a frame edge reveals
-   the grab handles without blocking the click-through center. */
+/* Resize: edge lines are fully click-through (so the frame never blocks elements
+   along its border); only the small corner handles are interactive. Handles keep
+   pointer-events so hovering near a corner reveals them; they're invisible until
+   then. */
 .anno-resize-line { border-color: transparent !important; }
-.react-flow__node.anno-box-node .react-flow__resize-control.line { pointer-events: all !important; }
-.react-flow__node.anno-box-node .react-flow__resize-control.line.left,
-.react-flow__node.anno-box-node .react-flow__resize-control.line.right { width: 14px; }
-.react-flow__node.anno-box-node .react-flow__resize-control.line.top,
-.react-flow__node.anno-box-node .react-flow__resize-control.line.bottom { height: 14px; }
-/* Grab handles — shown only while the frame / label is hovered. */
+.react-flow__node.anno-box-node .react-flow__resize-control.line { pointer-events: none !important; }
 .react-flow__resize-control.handle.anno-resize-handle {
   width: 11px !important; height: 11px !important;
   background: var(--accent-2) !important; border: 2px solid var(--bg) !important;
-  border-radius: 3px; opacity: 0; pointer-events: none; transition: opacity .12s;
+  border-radius: 3px; opacity: 0; pointer-events: all; transition: opacity .12s;
 }
 .react-flow__node.anno-box-node:hover .anno-resize-handle,
-.react-flow__node.anno-label-node:hover .anno-resize-handle {
-  opacity: .95; pointer-events: all;
-}
+.react-flow__node.anno-label-node:hover .anno-resize-handle { opacity: .95; }
 .anno-box {
   width: 100%; height: 100%; border-radius: 14px;
   background: rgba(123, 108, 255, 0.035);
 }
 .anno-box.dashed { border: 1.6px dashed var(--node-border); }
 .anno-box.solid { border: 1.6px solid var(--node-border); }
+/* The only drag surface — a grip near the top-right corner. */
+.anno-box-drag {
+  position: absolute; top: 6px; right: 8px; pointer-events: all; cursor: grab;
+  width: 22px; height: 20px; display: grid; place-items: center; border-radius: 6px;
+  color: var(--muted); font-size: 12px; line-height: 1;
+  background: var(--bg); border: 1px solid var(--node-border);
+  opacity: .55; transition: opacity .12s, color .12s;
+}
+.anno-box-drag:hover { opacity: 1; color: var(--text); }
+.anno-box-drag:active { cursor: grabbing; }
 .anno-box-bar {
   position: absolute; top: -15px; left: 14px;
   display: flex; align-items: center; gap: 4px;
   padding: 2px 6px; border-radius: 8px; pointer-events: auto;
-  background: var(--bg); border: 1px solid var(--node-border); cursor: grab;
+  background: var(--bg); border: 1px solid var(--node-border);
 }
-.anno-box-grip { color: var(--muted); font-size: 11px; cursor: grab; line-height: 1; }
 .anno-box-title {
   width: 140px; padding: 0; box-sizing: border-box;
   background: transparent; border: none; outline: none;
-  color: var(--text); font-size: 12px; font-weight: 700;
+  color: var(--text); font-size: 12px; font-weight: 700; cursor: text;
 }
 .anno-btn {
   background: transparent; border: none; cursor: pointer;
   color: var(--muted); font-size: 12px; line-height: 1; padding: 3px 5px; border-radius: 6px;
 }
 .anno-btn:hover { color: var(--text); background: var(--node); }
-/* Unlabeled frame: show only the grip; reveal input + controls on hover/focus. */
-.anno-box-bar.has-text .anno-box-grip { display: none; }
-.anno-box-bar:not(.has-text) { background: transparent; border-color: transparent; }
-.anno-box-bar:not(.has-text) .anno-box-title { width: 0; overflow: hidden; }
-.anno-box-bar:not(.has-text) .anno-btn { display: none; }
+/* Unlabeled frame: the title bar stays hidden (and non-blocking) until the frame
+   is hovered — moving is via the grip, so no label chip is needed. */
+.anno-box-bar:not(.has-text) { opacity: 0; pointer-events: none; }
 .anno-box-node:hover .anno-box-bar:not(.has-text),
-.anno-box-bar:not(.has-text):focus-within {
-  background: var(--bg); border-color: var(--node-border);
-}
-.anno-box-node:hover .anno-box-bar:not(.has-text) .anno-box-title,
-.anno-box-bar:not(.has-text):focus-within .anno-box-title { width: 140px; }
-.anno-box-node:hover .anno-box-bar:not(.has-text) .anno-btn,
-.anno-box-bar:not(.has-text):focus-within .anno-btn { display: block; }
-/* Connection handles on frames (frame body is click-through, so re-enable them). */
+.anno-box-bar:not(.has-text):focus-within { opacity: 1; pointer-events: auto; }
+/* Connection handles — only interactive while hovering the frame, so they don't
+   block other nodes' edges/handles when idle. */
 .react-flow__node.anno-box-node .anno-conn {
-  pointer-events: all; opacity: 0; transition: opacity .12s;
+  pointer-events: none; opacity: 0; transition: opacity .12s;
   width: 9px; height: 9px; background: var(--accent-2); border: 2px solid var(--bg);
 }
-.react-flow__node.anno-box-node:hover .anno-conn { opacity: 1; }
+.react-flow__node.anno-box-node:hover .anno-conn { pointer-events: all; opacity: 1; }
 .anno-label {
   position: relative; width: 100%; height: 100%;
   display: flex; align-items: center; gap: 4px;
@@ -595,7 +592,8 @@ button.pw-gen:hover { border-color: var(--accent-2); }
 }
 .react-flow__node:hover .conn-dot,
 .react-flow__node.selected .conn-dot { opacity: 1; }
-.react-flow__node.anno-box-node .conn-dot { pointer-events: all; }
+/* (frame conn-dots are hover-gated via .anno-conn so an idle frame never blocks
+   the elements beneath it) */
 
 /* ✕ to delete a manual connection (also selectable + Delete key) */
 .edge-delete {

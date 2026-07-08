@@ -3,10 +3,10 @@ import { NodeResizer } from 'reactflow';
 import '@reactflow/node-resizer/dist/style.css';
 import ConnectHandles from './ConnectHandles.jsx';
 
-// A resizable grouping frame (dotted or solid). The frame body is click-through
-// (pointer-events: none in CSS) so nodes underneath stay interactive — you grab
-// it by its title bar and resize via the corner/edge handles on hover. It also
-// exposes connection handles so you can wire a frame to other frames/elements.
+// A resizable grouping frame (dotted or solid). The body and edges are fully
+// click-through so it never blocks the nodes/edges underneath — you move it only
+// by the drag grip near the top-right corner, resize via the small corner
+// handles, and edit its label / border via the title bar.
 export function AnnotationBox({ data }) {
   const { text, dashed, onRename, onToggleDash, onRemove, onResize } = data;
   const hasText = !!(text && text.trim());
@@ -24,10 +24,10 @@ export function AnnotationBox({ data }) {
       />
       <ConnectHandles className="anno-conn" />
       <div className={`anno-box ${dashed ? 'dashed' : 'solid'}`}>
-        {/* Title bar: only the grip shows when there's no label; the input +
-            controls appear on hover so an unlabeled frame stays clean. */}
-        <div className={`anno-box-bar${hasText ? ' has-text' : ''}`}>
-          <span className="anno-box-grip" title="Drag to move">⠿</span>
+        {/* The ONLY drag surface — a grip near the top-right corner. */}
+        <div className="anno-box-drag" title="Drag to move this frame">⠿</div>
+        {/* Title / controls — for editing only (nodrag), so they don't move it. */}
+        <div className={`anno-box-bar nodrag${hasText ? ' has-text' : ''}`}>
           <input
             className="anno-box-title nodrag nopan"
             value={text}
