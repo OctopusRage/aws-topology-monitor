@@ -128,13 +128,35 @@ function Dashboard() {
     []
   );
 
+  // Center of what's currently on screen, in canvas coords (accounts for
+  // pan/zoom). New nodes spawn here so they land in view, not off in a corner.
+  const viewportCenter = useCallback(() => {
+    const inst = rf.current;
+    const paneEl = document.querySelector('.react-flow');
+    if (inst && paneEl) {
+      const r = paneEl.getBoundingClientRect();
+      const screenMid = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      if (inst.screenToFlowPosition) return inst.screenToFlowPosition(screenMid);
+      if (inst.project) return inst.project({ x: r.width / 2, y: r.height / 2 });
+    }
+    return { x: 0, y: 0 };
+  }, []);
+
   const addStandaloneTGs = useCallback((items) => {
+    const c = viewportCenter();
     setStandaloneTGs((prev) => {
       const seen = new Set(prev.map((s) => s.tgArn));
-      return [...prev, ...items.filter((i) => !seen.has(i.tgArn)).map((i) => ({ ...i, position: null }))];
+      const fresh = items.filter((i) => !seen.has(i.tgArn));
+      return [
+        ...prev,
+        ...fresh.map((i, k) => ({
+          ...i,
+          position: { x: c.x - 180 + k * 32, y: c.y - 110 + k * 32 },
+        })),
+      ];
     });
     setShowAddTG(false);
-  }, []);
+  }, [viewportCenter]);
 
   const removeStandaloneTG = useCallback((tgArn) => {
     setStandaloneTGs((prev) => prev.filter((s) => s.tgArn !== tgArn));
@@ -147,17 +169,7 @@ function Dashboard() {
         ? { kind: 'box', width: 320, height: 200, dashed: true, text: '' }
         : { kind: 'label', width: 160, height: 44, text: 'Label' };
 
-    // Spawn at the center of what's currently on screen, converted to canvas
-    // coordinates (accounts for pan/zoom). Fall back to the origin if unavailable.
-    let center = { x: 0, y: 0 };
-    const inst = rf.current;
-    const paneEl = document.querySelector('.react-flow');
-    if (inst && paneEl) {
-      const r = paneEl.getBoundingClientRect();
-      const screenMid = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-      if (inst.screenToFlowPosition) center = inst.screenToFlowPosition(screenMid);
-      else if (inst.project) center = inst.project({ x: r.width / 2, y: r.height / 2 });
-    }
+    const center = viewportCenter();
 
     setAnnotations((prev) => {
       // Slight stagger so repeated adds don't land exactly on top of each other.
@@ -168,7 +180,7 @@ function Dashboard() {
       };
       return [...prev, { id: crypto.randomUUID(), position, ...base }];
     });
-  }, []);
+  }, [viewportCenter]);
 
   const updateAnnotation = useCallback((id, patch) => {
     setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
@@ -210,18 +222,20 @@ function Dashboard() {
     if (!gid) {
       gid = crypto.randomUUID();
       const name = group?.newGroupName?.trim();
+      const c = viewportCenter();
       setDataGroups((gs) => [
         ...gs,
         {
           id: gid,
           name: name || `Data points ${gs.length + 1}`,
-          position: { x: -486 + gs.length * 44, y: -278 + gs.length * 44 },
+          // roughly centered on the current view (offset ≈ half a small group)
+          position: { x: c.x - 110 + gs.length * 28, y: c.y - 60 + gs.length * 28 },
         },
       ]);
     }
     setDatapoints((prev) => [...prev, { ...dp, groupId: gid, pinned: false }]);
     setShowAddDp(false);
-  }, []);
+  }, [viewportCenter]);
 
   // Drop groups that no longer have any (non-pinned) members.
   useEffect(() => {
@@ -236,6 +250,7 @@ function Dashboard() {
 
   // ── instance groups (standalone EC2, not connected to a target group) ──
   const addInstances = useCallback(({ groupId, groupName, instances }) => {
+    const c = viewportCenter();
     setInstanceGroups((prev) => {
       if (groupId) {
         return prev.map((g) =>
@@ -252,11 +267,16 @@ function Dashboard() {
       }
       return [
         ...prev,
-        { id: crypto.randomUUID(), name: groupName, instances, position: null },
+        {
+          id: crypto.randomUUID(),
+          name: groupName,
+          instances,
+          position: { x: c.x - 180, y: c.y - 110 },
+        },
       ];
     });
     setShowAddInstances(false);
-  }, []);
+  }, [viewportCenter]);
 
   const removeInstanceGroup = useCallback((id) => {
     setInstanceGroups((prev) => prev.filter((g) => g.id !== id));
@@ -925,15 +945,8 @@ function Dashboard() {
     return () => clearTimeout(id);
   }, [graph.nodes.length, viewMode]);
 
-  useEffect(() => {
-    if (graph.nodes.length === 0) return;
-    const id = setTimeout(
-      () => rf.current && rf.current.fitView({ padding: 0.18, duration: 300 }),
-      120
-    );
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datapoints.length, instanceGroups.length]);
+  // (No fit-on-add: new nodes now spawn at the current viewport center, so the
+  // view should stay put instead of reframing to fit everything.)
 
   // ── Hover highlight ──
   const onNodeEnter = useCallback((_, node) => {
