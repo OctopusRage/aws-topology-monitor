@@ -10,7 +10,9 @@ const AWS_LABEL = {
   elasticache: 'ElastiCache cluster',
 };
 
-export default function AddDataPointModal({ onAdd, onClose }) {
+const NEW_GROUP = '__new__';
+
+export default function AddDataPointModal({ groups = [], onAdd, onClose }) {
   const [type, setType] = useState('rds');
   const [sources, setSources] = useState({ rds: [], opensearch: [], elasticache: [] });
   const [loading, setLoading] = useState(false);
@@ -20,6 +22,9 @@ export default function AddDataPointModal({ onAdd, onClose }) {
   const [selected, setSelected] = useState(''); // rds id / opensearch domain
   const [label, setLabel] = useState('');
   const [instance, setInstance] = useState(''); // clickhouse/custom prometheus instance
+  // target group: an existing data-point group, or a new one
+  const [groupChoice, setGroupChoice] = useState(groups[0]?.id || NEW_GROUP);
+  const [newGroupName, setNewGroupName] = useState('');
 
   useEffect(() => {
     setLoading(true);
@@ -70,7 +75,9 @@ export default function AddDataPointModal({ onAdd, onClose }) {
       };
     }
     dp.id = crypto.randomUUID();
-    onAdd(dp);
+    const group =
+      groupChoice === NEW_GROUP ? { newGroupName } : { groupId: groupChoice };
+    onAdd(dp, group);
   };
 
   return (
@@ -152,6 +159,29 @@ export default function AddDataPointModal({ onAdd, onClose }) {
               onChange={(e) => setLabel(e.target.value)}
             />
           </label>
+
+          <label className="login-field">
+            <span>Group</span>
+            <select value={groupChoice} onChange={(e) => setGroupChoice(e.target.value)}>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+              <option value={NEW_GROUP}>➕ New group…</option>
+            </select>
+          </label>
+
+          {groupChoice === NEW_GROUP && (
+            <label className="login-field">
+              <span>New group name (optional)</span>
+              <input
+                placeholder="e.g. Databases"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+              />
+            </label>
+          )}
 
           {error && <div className="login-error">⚠ {error}</div>}
 

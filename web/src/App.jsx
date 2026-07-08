@@ -35,7 +35,7 @@ const ELB_TYPES = ['elb', 'elbN', 'elbRadial'];
 const overlaySignature = (o = {}) =>
   JSON.stringify({
     datapoints: o.datapoints || [],
-    dpGroupPos: o.dpGroupPos || null,
+    dataGroups: o.dataGroups || [],
     connections: o.connections || [],
     instanceGroups: o.instanceGroups || [],
     standaloneTGs: o.standaloneTGs || [],
@@ -81,7 +81,7 @@ function Dashboard() {
 
   // data points + saved views
   const [datapoints, setDatapoints] = useState([]);
-  const [dpGroupPos, setDpGroupPos] = useState(null); // data-point group top-left
+  const [dataGroups, setDataGroups] = useState([]); // [{id, name, position}] — data-point groups
   const [connections, setConnections] = useState([]);
   const [instanceGroups, setInstanceGroups] = useState([]);
   const [showAddInstances, setShowAddInstances] = useState(false);
@@ -106,7 +106,7 @@ function Dashboard() {
   // unsaved work. Initialized to the empty overlay (a fresh base view is clean).
   const savedOverlayRef = useRef(EMPTY_OVERLAY_SIG);
   const currentOverlaySig = () =>
-    overlaySignature({ datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, annotations, nodePositions });
+    overlaySignature({ datapoints, dataGroups, connections, instanceGroups, standaloneTGs, annotations, nodePositions });
   // Switching a saved view's layout (once unlocked) is also unsaved work.
   const modeChanged = () => !!currentView?.viewMode && currentView.viewMode !== viewMode;
   const hasUnsavedWork = () => currentOverlaySig() !== savedOverlayRef.current || modeChanged();
@@ -174,27 +174,54 @@ function Dashboard() {
     );
   }, []);
 
-  // Delete the whole data group: removes the grouped (non-pinned) data points,
-  // keeping any that were dragged out to stand on their own.
-  const removeDataGroup = useCallback(() => {
+  // Delete a data group: removes its grouped (non-pinned) data points, keeping
+  // any that were dragged out to stand on their own.
+  const removeDataGroup = useCallback((gid) => {
     setDatapoints((dps) => {
-      const removed = dps.filter((d) => !d.pinned).map((d) => `dp:${d.id}`);
+      const removed = dps
+        .filter((d) => d.groupId === gid && !d.pinned)
+        .map((d) => `dp:${d.id}`);
       if (removed.length) {
         setConnections((cs) =>
           cs.filter((c) => !removed.includes(c.source) && !removed.includes(c.target))
         );
       }
-      return dps.filter((d) => d.pinned);
+      return dps.filter((d) => !(d.groupId === gid && !d.pinned));
     });
+    setDataGroups((gs) => gs.filter((g) => g.id !== gid));
+    setConnections((cs) => cs.filter((c) => c.source !== `dpg:${gid}` && c.target !== `dpg:${gid}`));
   }, []);
 
-  const addDatapoint = useCallback((dp) => {
-    setDatapoints((prev) => [
-      ...prev,
-      { ...dp, position: dp.position || { x: -440, y: -240 + prev.length * 110 } },
-    ]);
+  // Add a data point to a chosen group — an existing one ({groupId}) or a new
+  // group ({newGroupName}); a new group is created and the point assigned to it.
+  const addDatapoint = useCallback((dp, group) => {
+    let gid = group?.groupId || null;
+    if (!gid) {
+      gid = crypto.randomUUID();
+      const name = group?.newGroupName?.trim();
+      setDataGroups((gs) => [
+        ...gs,
+        {
+          id: gid,
+          name: name || `Data points ${gs.length + 1}`,
+          position: { x: -486 + gs.length * 44, y: -278 + gs.length * 44 },
+        },
+      ]);
+    }
+    setDatapoints((prev) => [...prev, { ...dp, groupId: gid, pinned: false }]);
     setShowAddDp(false);
   }, []);
+
+  // Drop groups that no longer have any (non-pinned) members.
+  useEffect(() => {
+    setDataGroups((gs) => {
+      const used = new Set(
+        datapoints.filter((d) => !d.pinned && d.groupId).map((d) => d.groupId)
+      );
+      const next = gs.filter((g) => used.has(g.id));
+      return next.length === gs.length ? gs : next;
+    });
+  }, [datapoints]);
 
   // ── instance groups (standalone EC2, not connected to a target group) ──
   const addInstances = useCallback(({ groupId, groupName, instances }) => {
@@ -265,19 +292,19 @@ function Dashboard() {
       const cy = abs.y + (node.height || 60) / 2;
       const allNodes = rf.current?.getNodes?.() || [];
 
-      if (id === 'dp-group') {
-        // Move the whole data-point group as a unit (children follow along).
-        setDpGroupPos(node.position);
+      if (id.startsWith('dpg:')) {
+        // Move a whole data-point group as a unit (children follow along).
+        const gid = id.slice(4);
+        setDataGroups((gs) => gs.map((g) => (g.id === gid ? { ...g, position: node.position } : g)));
       } else if (id.startsWith('dp:')) {
-        // Dropped back inside the group → rejoin (un-pin); else pin in place.
+        // Dropped onto a data group → join it (un-pin); else pin standalone.
         const dpId = id.slice(3);
-        const grp = allNodes.find((n) => n.id === 'dp-group');
-        const inside = grp && rectHas(grp, cx, cy);
+        const target = allNodes.find((n) => n.type === 'dpGroup' && rectHas(n, cx, cy));
         setDatapoints((dps) =>
           dps.map((d) =>
             d.id === dpId
-              ? inside
-                ? { ...d, pinned: false }
+              ? target
+                ? { ...d, groupId: target.id.slice(4), pinned: false }
                 : { ...d, position: abs, pinned: true }
               : d
           )
@@ -317,7 +344,11 @@ function Dashboard() {
   const onConnect = useCallback((params) => {
     if (!params.source || !params.target || params.source === params.target) return;
     const addable = (id) =>
-      id.startsWith('dp:') || id.startsWith('ig:') || id.startsWith('stg:') || id.startsWith('anno:');
+      id.startsWith('dpg:') ||
+      id.startsWith('dp:') ||
+      id.startsWith('ig:') ||
+      id.startsWith('stg:') ||
+      id.startsWith('anno:');
     if (!addable(params.source) && !addable(params.target)) return;
     setConnections((cs) =>
       cs.some((c) => c.source === params.source && c.target === params.target)
@@ -342,7 +373,7 @@ function Dashboard() {
     if (!id) {
       setCurrentView(null);
       setDatapoints([]);
-      setDpGroupPos(null);
+      setDataGroups([]);
       setConnections([]);
       setInstanceGroups([]);
       setStandaloneTGs([]);
@@ -354,10 +385,24 @@ function Dashboard() {
     }
     try {
       const v = await api.getView(Number(id));
+      // Migrate legacy views (single group via datapointGroupPos) → dataGroups.
+      let dps = v.data?.datapoints || [];
+      let dgs = v.data?.dataGroups;
+      if (!dgs) {
+        if (dps.some((d) => !d.pinned)) {
+          const gid = 'g-legacy';
+          dgs = [
+            { id: gid, name: 'Data points', position: v.data?.datapointGroupPos || { x: -486, y: -278 } },
+          ];
+          dps = dps.map((d) => (d.pinned ? d : { ...d, groupId: d.groupId || gid }));
+        } else {
+          dgs = [];
+        }
+      }
       setSelected(v.baseLbArn);
       if (v.data?.viewMode) setViewMode(v.data.viewMode);
-      setDatapoints(v.data?.datapoints || []);
-      setDpGroupPos(v.data?.datapointGroupPos || null);
+      setDatapoints(dps);
+      setDataGroups(dgs);
       setConnections(v.data?.connections || []);
       setInstanceGroups(v.data?.instanceGroups || []);
       setStandaloneTGs(v.data?.standaloneTargetGroups || []);
@@ -365,10 +410,10 @@ function Dashboard() {
       setNodePositions(v.data?.nodePositions || {});
       setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy, viewMode: v.data?.viewMode || null });
       setModeUnlocked(false); // each opened view starts locked to its layout
-      // Baseline = what we just loaded, so it isn't flagged as unsaved work.
+      // Baseline = what we just loaded (migrated), so it isn't flagged as dirty.
       savedOverlayRef.current = overlaySignature({
-        datapoints: v.data?.datapoints,
-        dpGroupPos: v.data?.datapointGroupPos,
+        datapoints: dps,
+        dataGroups: dgs,
         connections: v.data?.connections,
         instanceGroups: v.data?.instanceGroups,
         standaloneTGs: v.data?.standaloneTargetGroups,
@@ -386,7 +431,7 @@ function Dashboard() {
     setSelected(arn);
     setCurrentView(null);
     setDatapoints([]);
-    setDpGroupPos(null);
+    setDataGroups([]);
     setConnections([]);
     setInstanceGroups([]);
     setStandaloneTGs([]);
@@ -401,7 +446,7 @@ function Dashboard() {
       const data = {
         viewMode,
         datapoints,
-        datapointGroupPos: dpGroupPos,
+        dataGroups,
         connections,
         instanceGroups,
         standaloneTargetGroups: standaloneTGs.map(({ tgArn, name, position }) => ({
@@ -433,7 +478,7 @@ function Dashboard() {
     } catch (e) {
       setError(String(e.message || e));
     }
-  }, [currentView, selected, viewMode, datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, annotations, nodePositions, loadViewsList]);
+  }, [currentView, selected, viewMode, datapoints, dataGroups, connections, instanceGroups, standaloneTGs, annotations, nodePositions, loadViewsList]);
 
   // Which view is "active" right now — a saved view, or just the base ELB.
   const activeRef = currentView?.id
@@ -558,19 +603,29 @@ function Dashboard() {
       );
     }
 
-    // Data points auto-arrange into a labeled group; ones the user drags out
-    // become "pinned" and keep their own position outside the group.
+    // Data points live in one or more named groups; a point dragged out becomes
+    // "pinned" and stands alone. Each group renders a container + its members.
     const DP_COLS = 2, CW = 206, CH = 74, PAD = 16, HEAD = 28;
-    const groupPos = dpGroupPos || { x: -486, y: -278 };
-    const autoCount = datapoints.filter((d) => !d.pinned).length;
     const dpNodes = [];
-    if (autoCount > 0) {
-      const cols = Math.min(DP_COLS, autoCount);
-      const rows = Math.ceil(autoCount / DP_COLS);
+    const dpNode = (dp) => ({
+      id: `dp:${dp.id}`,
+      type: 'datapoint',
+      draggable: true,
+      data: { dp, onOpen: () => setActiveDp(dp), onRemove: () => removeDatapoint(dp.id) },
+    });
+
+    const groupIds = new Set(dataGroups.map((g) => g.id));
+    const membersOf = (gid) => datapoints.filter((d) => !d.pinned && d.groupId === gid);
+
+    for (const g of dataGroups) {
+      const members = membersOf(g.id);
+      if (!members.length) continue;
+      const cols = Math.min(DP_COLS, members.length);
+      const rows = Math.ceil(members.length / DP_COLS);
       dpNodes.push({
-        id: 'dp-group',
+        id: `dpg:${g.id}`,
         type: 'dpGroup',
-        position: groupPos,
+        position: g.position || { x: -486, y: -278 },
         style: {
           width: cols * 190 + (cols - 1) * 16 + PAD * 2,
           height: rows * 58 + (rows - 1) * 16 + HEAD + PAD,
@@ -578,31 +633,21 @@ function Dashboard() {
         className: 'dp-group-node',
         draggable: true,
         selectable: true,
-        data: { onRemove: removeDataGroup },
+        data: { name: g.name, onRemove: () => removeDataGroup(g.id) },
+      });
+      members.forEach((dp, i) => {
+        dpNodes.push({
+          ...dpNode(dp),
+          parentId: `dpg:${g.id}`, // move with the group; no `extent` so it can be pulled out
+          position: { x: PAD + (i % DP_COLS) * CW, y: HEAD + Math.floor(i / DP_COLS) * CH },
+        });
       });
     }
-    let ai = 0;
+
+    // Pinned points, plus any orphaned by a missing group, stand alone.
     for (const dp of datapoints) {
-      const node = {
-        id: `dp:${dp.id}`,
-        type: 'datapoint',
-        data: { dp, onOpen: () => setActiveDp(dp), onRemove: () => removeDatapoint(dp.id) },
-        draggable: true,
-      };
-      if (dp.pinned && dp.position) {
-        // Standalone (dragged out of the group) — absolute canvas position.
-        node.position = dp.position;
-      } else {
-        // Auto-arranged — a child of the group so it moves with it, but with no
-        // `extent` so the user can still drag it out to pin it.
-        node.parentId = 'dp-group';
-        node.position = {
-          x: PAD + (ai % DP_COLS) * CW,
-          y: HEAD + Math.floor(ai / DP_COLS) * CH,
-        };
-        ai++;
-      }
-      dpNodes.push(node);
+      if (!dp.pinned && groupIds.has(dp.groupId)) continue;
+      dpNodes.push({ ...dpNode(dp), position: dp.position || { x: -440, y: -240 } });
     }
     const connEdges = connections.map((c, i) => ({
       id: `conn:${i}:${c.source}->${c.target}`,
@@ -765,7 +810,7 @@ function Dashboard() {
     removeAnnotation,
     nodePositions,
     datapoints,
-    dpGroupPos,
+    dataGroups,
     connections,
     removeDatapoint,
     removeDataGroup,
@@ -1106,7 +1151,11 @@ function Dashboard() {
       {showUsers && <UsersModal onClose={() => setShowUsers(false)} />}
       {showAccount && <AccountModal onClose={() => setShowAccount(false)} />}
       {showAddDp && (
-        <AddDataPointModal onAdd={addDatapoint} onClose={() => setShowAddDp(false)} />
+        <AddDataPointModal
+          groups={dataGroups}
+          onAdd={addDatapoint}
+          onClose={() => setShowAddDp(false)}
+        />
       )}
       {showAddInstances && (
         <AddInstancesModal

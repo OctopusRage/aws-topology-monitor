@@ -49,7 +49,10 @@ export function DatapointNode({ data }) {
 export function DatapointGroupNode({ data }) {
   return (
     <div className="dp-group">
-      <div className="dp-group-label">DATA POINTS</div>
+      {/* connection handles so the whole group can be wired to other nodes */}
+      <Handle type="target" position={Position.Left} className="rf-handle dp-group-conn" />
+      <Handle type="source" position={Position.Right} className="rf-handle dp-group-conn" />
+      <div className="dp-group-label">{data?.name || 'DATA POINTS'}</div>
       {data?.onRemove && (
         <button
           className="dp-group-remove"
