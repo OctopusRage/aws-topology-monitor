@@ -82,8 +82,7 @@ export default function MetricsModal({ targetGroup, lbArn, defaultSource, button
         </div>
 
         {(buttons?.length > 0 || onEditButtons) && (
-          <div className="modal-links top">
-            <div className="node-kicker">CUSTOM LINKS</div>
+          <div className="modal-links-bare">
             <NodeButtons buttons={buttons} onEdit={onEditButtons} />
           </div>
         )}
