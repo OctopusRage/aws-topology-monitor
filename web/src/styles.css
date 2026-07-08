@@ -907,6 +907,11 @@ button.pw-gen:hover { border-color: var(--accent-2); }
 .ig-modal-cta { color: var(--accent-2); font-family: inherit; margin-left: 6px; }
 
 .modal-links { padding: 4px 24px 22px; }
+/* links pinned near the top of the modal so they're immediately visible */
+.modal-links.top {
+  padding: 14px 24px; margin: 4px 24px 0; border-radius: 10px;
+  background: rgba(123, 108, 255, 0.06); border: 1px solid var(--node-border);
+}
 .modal-links .node-btns { margin-top: 8px; }
 .modal-links .node-btn-link { max-width: 320px; font-size: 12px; padding: 5px 12px; }
 

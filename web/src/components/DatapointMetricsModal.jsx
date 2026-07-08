@@ -208,6 +208,13 @@ export default function DatapointMetricsModal({ datapoint, buttons, onEditButton
           </div>
         </div>
 
+        {(buttons?.length > 0 || onEditButtons) && (
+          <div className="modal-links top">
+            <div className="node-kicker">CUSTOM LINKS</div>
+            <NodeButtons buttons={buttons} onEdit={onEditButtons} />
+          </div>
+        )}
+
         {error && <div className="modal-error">⚠ {error}</div>}
         {data?.error && (
           <div className="modal-warn">Source unavailable ({data.error}) — showing sample data.</div>
@@ -221,13 +228,6 @@ export default function DatapointMetricsModal({ datapoint, buttons, onEditButton
 
         {datapoint.type === 'rds' && datapoint.config?.dbInstanceId && (
           <TopSql dbInstanceId={datapoint.config.dbInstanceId} range={range} />
-        )}
-
-        {(buttons?.length > 0 || onEditButtons) && (
-          <div className="modal-links">
-            <div className="node-kicker">CUSTOM LINKS</div>
-            <NodeButtons buttons={buttons} onEdit={onEditButtons} />
-          </div>
         )}
       </div>
     </div>

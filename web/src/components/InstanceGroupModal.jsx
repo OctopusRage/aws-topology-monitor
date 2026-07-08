@@ -18,6 +18,13 @@ export default function InstanceGroupModal({ group, buttons, onEditButtons, onOp
           <button className="close-btn" onClick={onClose}>✕</button>
         </div>
 
+        {(buttons?.length > 0 || onEditButtons) && (
+          <div className="modal-links top">
+            <div className="node-kicker">CUSTOM LINKS</div>
+            <NodeButtons buttons={buttons} onEdit={onEditButtons} />
+          </div>
+        )}
+
         <div className="server-list">
           <div className="node-kicker">INSTANCES IN THIS GROUP</div>
           <div className="ig-modal-list">
@@ -40,13 +47,6 @@ export default function InstanceGroupModal({ group, buttons, onEditButtons, onOp
             {instances.length === 0 && <div className="modal-sub">No instances.</div>}
           </div>
         </div>
-
-        {(buttons?.length > 0 || onEditButtons) && (
-          <div className="modal-links">
-            <div className="node-kicker">CUSTOM LINKS</div>
-            <NodeButtons buttons={buttons} onEdit={onEditButtons} />
-          </div>
-        )}
       </div>
     </div>
   );
