@@ -10,6 +10,9 @@ services:
     environment:
       PORT: "8473"
       STATIC_DIR: /app/public
+      # Only needed if the gateway forwards the sub-path prefix instead of
+      # stripping it (symptom: blank page / 404s under e.g. /_stellar/).
+      BASE_PATH: ${BASE_PATH:-}
       USE_AWS: ${USE_AWS:-false}
       AWS_REGION: ${AWS_REGION:-ap-southeast-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}

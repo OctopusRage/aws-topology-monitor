@@ -6,9 +6,28 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
+// Resolve `/api/...` against the directory the app is served from, so requests
+// go to the same sub-path the page loaded under (e.g. /_stellar/api/...) rather
+// than the domain root. Falls back to the plain path if URL resolution fails.
+const APP_BASE = (() => {
+  try {
+    return new URL('.', document.baseURI).href; // e.g. https://host/_stellar/
+  } catch {
+    return '/';
+  }
+})();
+
+function resolveUrl(path) {
+  try {
+    return new URL(String(path).replace(/^\//, ''), APP_BASE).href;
+  } catch {
+    return path;
+  }
+}
+
 async function req(path, opts = {}) {
   const token = tokenStore.get();
-  const res = await fetch(path, {
+  const res = await fetch(resolveUrl(path), {
     ...opts,
     headers: {
       'Content-Type': 'application/json',

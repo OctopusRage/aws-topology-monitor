@@ -21,6 +21,19 @@ if (config.useAws) {
 }
 
 const app = express();
+
+// When deployed under a sub-path (e.g. https://host/_stellar/) whose gateway
+// forwards the prefix instead of stripping it, set BASE_PATH=/_stellar so the
+// server still matches /api/... and serves static assets. No-op when unset.
+const basePath = (process.env.BASE_PATH || '').replace(/\/+$/, '');
+if (basePath) {
+  app.use((req, _res, next) => {
+    if (req.url === basePath) req.url = '/';
+    else if (req.url.startsWith(basePath + '/')) req.url = req.url.slice(basePath.length);
+    next();
+  });
+}
+
 app.use(cors());
 app.use(express.json());
 
