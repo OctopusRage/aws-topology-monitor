@@ -40,8 +40,17 @@ const overlaySignature = (o = {}) =>
     instanceGroups: o.instanceGroups || [],
     standaloneTGs: o.standaloneTGs || [],
     annotations: o.annotations || [],
+    nodePositions: o.nodePositions || {},
   });
 const EMPTY_OVERLAY_SIG = overlaySignature();
+
+// Does a React Flow node's box contain the point (cx, cy) in canvas coords?
+const rectHas = (n, cx, cy) => {
+  const p = n.positionAbsolute || n.position || { x: 0, y: 0 };
+  const w = n.width || 0;
+  const h = n.height || 0;
+  return cx >= p.x && cx <= p.x + w && cy >= p.y && cy <= p.y + h;
+};
 
 // stable merged map so React Flow doesn't warn / rebuild
 const nodeTypes = {
@@ -80,6 +89,9 @@ function Dashboard() {
   const [standaloneTgData, setStandaloneTgData] = useState({}); // tgArn -> live tg
   // Canvas annotations to organize a big view: grouping frames + text labels.
   const [annotations, setAnnotations] = useState([]);
+  // User-moved positions for base topology nodes (ELB/TG/servers), keyed by id,
+  // so a dragged target group stays put across topology auto-refreshes.
+  const [nodePositions, setNodePositions] = useState({});
   const [showAddTG, setShowAddTG] = useState(false);
   const [views, setViews] = useState([]);
   const [currentView, setCurrentView] = useState(null); // {id,name,createdBy}
@@ -94,7 +106,7 @@ function Dashboard() {
   // unsaved work. Initialized to the empty overlay (a fresh base view is clean).
   const savedOverlayRef = useRef(EMPTY_OVERLAY_SIG);
   const currentOverlaySig = () =>
-    overlaySignature({ datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, annotations });
+    overlaySignature({ datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, annotations, nodePositions });
   // Switching a saved view's layout (once unlocked) is also unsaved work.
   const modeChanged = () => !!currentView?.viewMode && currentView.viewMode !== viewMode;
   const hasUnsavedWork = () => currentOverlaySig() !== savedOverlayRef.current || modeChanged();
@@ -162,6 +174,20 @@ function Dashboard() {
     );
   }, []);
 
+  // Delete the whole data group: removes the grouped (non-pinned) data points,
+  // keeping any that were dragged out to stand on their own.
+  const removeDataGroup = useCallback(() => {
+    setDatapoints((dps) => {
+      const removed = dps.filter((d) => !d.pinned).map((d) => `dp:${d.id}`);
+      if (removed.length) {
+        setConnections((cs) =>
+          cs.filter((c) => !removed.includes(c.source) && !removed.includes(c.target))
+        );
+      }
+      return dps.filter((d) => d.pinned);
+    });
+  }, []);
+
   const addDatapoint = useCallback((dp) => {
     setDatapoints((prev) => [
       ...prev,
@@ -198,45 +224,100 @@ function Dashboard() {
     setInstanceGroups((prev) => prev.filter((g) => g.id !== id));
   }, []);
 
-  // Persist a dragged position (data points pin; instance groups move as a unit).
-  const onNodeDragStop = useCallback((_, node) => {
-    if (node.id === 'dp-group') {
-      // Move the whole data-point group as a unit (children follow automatically).
-      setDpGroupPos(node.position);
-    } else if (String(node.id).startsWith('dp:')) {
-      const id = node.id.slice(3);
-      // A child dragged out pins in place — use absolute coords since its
-      // position is relative to the (parented) group while it's inside.
-      const pos = node.positionAbsolute || node.position;
-      setDatapoints((dps) =>
-        dps.map((d) =>
-          d.id === id ? { ...d, position: pos, pinned: true } : d
-        )
+  // Move an instance out of its group: into another group (targetGid), or — when
+  // dropped on empty canvas (targetGid null) — into a new group of its own.
+  const moveInstanceBetweenGroups = useCallback((srcGid, instId, targetGid, absPos) => {
+    if (targetGid === srcGid) return; // dropped back on itself → snap into place
+    setInstanceGroups((prev) => {
+      const src = prev.find((g) => g.id === srcGid);
+      const inst = src?.instances.find((i) => i.id === instId);
+      if (!inst) return prev;
+      if (targetGid && prev.find((g) => g.id === targetGid)?.instances.some((i) => i.id === instId))
+        return prev; // already in the target
+      let next = prev.map((g) =>
+        g.id === srcGid ? { ...g, instances: g.instances.filter((i) => i.id !== instId) } : g
       );
-    } else if (String(node.id).startsWith('ig:')) {
-      const id = node.id.slice(3);
-      setInstanceGroups((gs) =>
-        gs.map((g) => (g.id === id ? { ...g, position: node.position } : g))
-      );
-    } else if (String(node.id).startsWith('stg:')) {
-      const arn = node.id.slice(4);
-      setStandaloneTGs((gs) =>
-        gs.map((g) => (g.tgArn === arn ? { ...g, position: node.position } : g))
-      );
-    } else if (String(node.id).startsWith('anno:')) {
-      const id = node.id.slice(5);
-      setAnnotations((as) =>
-        as.map((a) => (a.id === id ? { ...a, position: node.position } : a))
-      );
-    }
+      if (targetGid) {
+        next = next.map((g) =>
+          g.id === targetGid ? { ...g, instances: [...g.instances, inst] } : g
+        );
+      } else {
+        next = [
+          ...next,
+          {
+            id: crypto.randomUUID(),
+            name: inst.name || inst.id || 'Instance',
+            instances: [inst],
+            position: absPos,
+          },
+        ];
+      }
+      return next.filter((g) => g.instances.length > 0); // drop emptied groups
+    });
   }, []);
+
+  // Persist a dragged position, and support dragging members between groups.
+  const onNodeDragStop = useCallback(
+    (_, node) => {
+      const id = String(node.id);
+      const abs = node.positionAbsolute || node.position;
+      const cx = abs.x + (node.width || 160) / 2;
+      const cy = abs.y + (node.height || 60) / 2;
+      const allNodes = rf.current?.getNodes?.() || [];
+
+      if (id === 'dp-group') {
+        // Move the whole data-point group as a unit (children follow along).
+        setDpGroupPos(node.position);
+      } else if (id.startsWith('dp:')) {
+        // Dropped back inside the group → rejoin (un-pin); else pin in place.
+        const dpId = id.slice(3);
+        const grp = allNodes.find((n) => n.id === 'dp-group');
+        const inside = grp && rectHas(grp, cx, cy);
+        setDatapoints((dps) =>
+          dps.map((d) =>
+            d.id === dpId
+              ? inside
+                ? { ...d, pinned: false }
+                : { ...d, position: abs, pinned: true }
+              : d
+          )
+        );
+      } else if (id.startsWith('ig:') && id.includes('::')) {
+        // An instance was dragged: move it to whatever group it was dropped on,
+        // or out to a new group of its own when dropped on empty canvas.
+        const [srcGid, instId] = id.slice(3).split('::');
+        const target = allNodes.find((n) => n.type === 'instanceGroup' && rectHas(n, cx, cy));
+        moveInstanceBetweenGroups(srcGid, instId, target ? target.id.slice(3) : null, abs);
+      } else if (id.startsWith('ig:')) {
+        const gid = id.slice(3);
+        setInstanceGroups((gs) =>
+          gs.map((g) => (g.id === gid ? { ...g, position: node.position } : g))
+        );
+      } else if (id.startsWith('stg:')) {
+        const arn = id.slice(4);
+        setStandaloneTGs((gs) =>
+          gs.map((g) => (g.tgArn === arn ? { ...g, position: node.position } : g))
+        );
+      } else if (id.startsWith('anno:')) {
+        const aid = id.slice(5);
+        setAnnotations((as) =>
+          as.map((a) => (a.id === aid ? { ...a, position: node.position } : a))
+        );
+      } else {
+        // A base topology node (ELB / target group / server) was moved — remember
+        // it so the layout / auto-refresh doesn't snap it back to the default.
+        setNodePositions((prev) => ({ ...prev, [id]: node.position }));
+      }
+    },
+    [moveInstanceBetweenGroups]
+  );
 
   // Optional manual connection — at least one end must be a user-added node
   // (data point / instance / instance group), so base topology edges are left alone.
   const onConnect = useCallback((params) => {
     if (!params.source || !params.target || params.source === params.target) return;
     const addable = (id) =>
-      id.startsWith('dp:') || id.startsWith('ig:') || id.startsWith('stg:');
+      id.startsWith('dp:') || id.startsWith('ig:') || id.startsWith('stg:') || id.startsWith('anno:');
     if (!addable(params.source) && !addable(params.target)) return;
     setConnections((cs) =>
       cs.some((c) => c.source === params.source && c.target === params.target)
@@ -266,6 +347,7 @@ function Dashboard() {
       setInstanceGroups([]);
       setStandaloneTGs([]);
       setAnnotations([]);
+      setNodePositions({});
       savedOverlayRef.current = EMPTY_OVERLAY_SIG;
       setModeUnlocked(false);
       return;
@@ -280,6 +362,7 @@ function Dashboard() {
       setInstanceGroups(v.data?.instanceGroups || []);
       setStandaloneTGs(v.data?.standaloneTargetGroups || []);
       setAnnotations(v.data?.annotations || []);
+      setNodePositions(v.data?.nodePositions || {});
       setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy, viewMode: v.data?.viewMode || null });
       setModeUnlocked(false); // each opened view starts locked to its layout
       // Baseline = what we just loaded, so it isn't flagged as unsaved work.
@@ -290,6 +373,7 @@ function Dashboard() {
         instanceGroups: v.data?.instanceGroups,
         standaloneTGs: v.data?.standaloneTargetGroups,
         annotations: v.data?.annotations,
+        nodePositions: v.data?.nodePositions,
       });
     } catch (e) {
       setError(String(e.message || e));
@@ -307,6 +391,7 @@ function Dashboard() {
     setInstanceGroups([]);
     setStandaloneTGs([]);
     setAnnotations([]);
+    setNodePositions({});
     savedOverlayRef.current = EMPTY_OVERLAY_SIG;
     setModeUnlocked(false);
   }, []);
@@ -325,6 +410,7 @@ function Dashboard() {
           position,
         })),
         annotations,
+        nodePositions,
       };
       if (currentView?.id) {
         await api.updateView(currentView.id, {
@@ -347,7 +433,7 @@ function Dashboard() {
     } catch (e) {
       setError(String(e.message || e));
     }
-  }, [currentView, selected, viewMode, datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, annotations, loadViewsList]);
+  }, [currentView, selected, viewMode, datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, annotations, nodePositions, loadViewsList]);
 
   // Which view is "active" right now — a saved view, or just the base ELB.
   const activeRef = currentView?.id
@@ -465,6 +551,13 @@ function Dashboard() {
     else if (viewMode === 'radial') base = buildRadialGraph(topology, openMetrics);
     else base = buildGraph(topology, openMetrics);
 
+    // Apply any user-moved positions so dragged base nodes survive re-layout.
+    if (Object.keys(nodePositions).length) {
+      base.nodes = base.nodes.map((n) =>
+        nodePositions[n.id] ? { ...n, position: nodePositions[n.id] } : n
+      );
+    }
+
     // Data points auto-arrange into a labeled group; ones the user drags out
     // become "pinned" and keep their own position outside the group.
     const DP_COLS = 2, CW = 206, CH = 74, PAD = 16, HEAD = 28;
@@ -485,7 +578,7 @@ function Dashboard() {
         className: 'dp-group-node',
         draggable: true,
         selectable: true,
-        data: {},
+        data: { onRemove: removeDataGroup },
       });
     }
     let ai = 0;
@@ -548,8 +641,9 @@ function Dashboard() {
           id: `ig:${g.id}::${inst.id}::${i}`,
           type: 'instanceNode',
           parentId: `ig:${g.id}`,
-          extent: 'parent',
-          draggable: false,
+          // draggable + no `extent` so an instance can be pulled out of the group
+          // or dropped into another one (handled in onNodeDragStop).
+          draggable: true,
           position: {
             x: IPADX + (i % ICOLS) * (IW + IGAP),
             y: IHEAD + Math.floor(i / ICOLS) * (IH + IGAP),
@@ -669,10 +763,12 @@ function Dashboard() {
     annotations,
     updateAnnotation,
     removeAnnotation,
+    nodePositions,
     datapoints,
     dpGroupPos,
     connections,
     removeDatapoint,
+    removeDataGroup,
     instanceGroups,
     removeInstanceGroup,
     standaloneTGs,

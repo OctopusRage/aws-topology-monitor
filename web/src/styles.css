@@ -300,6 +300,15 @@ html, body, #root {
   font-size: 9px; letter-spacing: .08em; font-weight: 700;
   text-transform: uppercase; color: var(--muted);
 }
+/* delete button for the whole data group (revealed on hover) */
+.dp-group-remove {
+  position: absolute; top: 6px; right: 8px; pointer-events: auto;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--node-border); color: var(--muted); border: 1px solid var(--bg);
+  font-size: 11px; cursor: pointer; display: none; place-items: center; line-height: 1;
+}
+.react-flow__node.dp-group-node:hover .dp-group-remove { display: grid; }
+.dp-group-remove:hover { background: var(--red); color: #fff; }
 .react-flow__edge.dp-conn .react-flow__edge-path { stroke-dasharray: 5 5; }
 
 /* ---------- Canvas annotations (grouping frames + labels) ---------- */
@@ -336,8 +345,10 @@ html, body, #root {
   padding: 2px 6px; border-radius: 8px; pointer-events: auto;
   background: var(--bg); border: 1px solid var(--node-border); cursor: grab;
 }
+.anno-box-grip { color: var(--muted); font-size: 11px; cursor: grab; line-height: 1; }
 .anno-box-title {
-  width: 140px; background: transparent; border: none; outline: none;
+  width: 140px; padding: 0; box-sizing: border-box;
+  background: transparent; border: none; outline: none;
   color: var(--text); font-size: 12px; font-weight: 700;
 }
 .anno-btn {
@@ -345,6 +356,25 @@ html, body, #root {
   color: var(--muted); font-size: 12px; line-height: 1; padding: 3px 5px; border-radius: 6px;
 }
 .anno-btn:hover { color: var(--text); background: var(--node); }
+/* Unlabeled frame: show only the grip; reveal input + controls on hover/focus. */
+.anno-box-bar.has-text .anno-box-grip { display: none; }
+.anno-box-bar:not(.has-text) { background: transparent; border-color: transparent; }
+.anno-box-bar:not(.has-text) .anno-box-title { width: 0; overflow: hidden; }
+.anno-box-bar:not(.has-text) .anno-btn { display: none; }
+.anno-box-node:hover .anno-box-bar:not(.has-text),
+.anno-box-bar:not(.has-text):focus-within {
+  background: var(--bg); border-color: var(--node-border);
+}
+.anno-box-node:hover .anno-box-bar:not(.has-text) .anno-box-title,
+.anno-box-bar:not(.has-text):focus-within .anno-box-title { width: 140px; }
+.anno-box-node:hover .anno-box-bar:not(.has-text) .anno-btn,
+.anno-box-bar:not(.has-text):focus-within .anno-btn { display: block; }
+/* Connection handles on frames (frame body is click-through, so re-enable them). */
+.react-flow__node.anno-box-node .anno-conn {
+  pointer-events: all; opacity: 0; transition: opacity .12s;
+  width: 9px; height: 9px; background: var(--accent-2); border: 2px solid var(--bg);
+}
+.react-flow__node.anno-box-node:hover .anno-conn { opacity: 1; }
 .anno-label {
   position: relative; width: 100%; height: 100%;
   display: flex; align-items: center; gap: 4px;
@@ -386,7 +416,8 @@ html, body, #root {
   font-size: 11px; font-weight: 700; color: #ff9900;
   background: rgba(255,153,0,.14); border-radius: 20px; padding: 3px 10px;
 }
-.ig-remove { top: -8px; right: -8px; }
+.ig-remove { top: -8px; right: -8px; display: none; }
+.ig-node:hover .ig-remove { display: grid; }
 
 .inst-node {
   width: 158px; height: 62px; display: flex; gap: 8px;

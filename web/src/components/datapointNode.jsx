@@ -46,10 +46,22 @@ export function DatapointNode({ data }) {
 }
 
 // Background container that visually groups the auto-arranged data points.
-export function DatapointGroupNode() {
+export function DatapointGroupNode({ data }) {
   return (
     <div className="dp-group">
       <div className="dp-group-label">DATA POINTS</div>
+      {data?.onRemove && (
+        <button
+          className="dp-group-remove"
+          title="Remove all data points in this group"
+          onClick={(e) => {
+            e.stopPropagation();
+            data.onRemove();
+          }}
+        >
+          ✕
+        </button>
+      )}
     </div>
   );
 }
