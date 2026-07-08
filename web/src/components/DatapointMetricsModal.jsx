@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
 import { DP_TYPES } from './datapointNode.jsx';
 import MetricPanel from './MetricPanel.jsx';
+import NodeButtons from './NodeButtons.jsx';
 
 const RANGES = ['15m', '1h', '6h', '24h'];
 const SOURCES = [
@@ -111,7 +112,7 @@ function TopSql({ dbInstanceId, range }) {
   );
 }
 
-export default function DatapointMetricsModal({ datapoint, onClose }) {
+export default function DatapointMetricsModal({ datapoint, buttons, onEditButtons, onClose }) {
   const [range, setRange] = useState('1h');
   // EC2 instances can be viewed via CloudWatch or node_exporter (privateIp:9100)
   const supportsToggle = datapoint.type === 'ec2';
@@ -220,6 +221,13 @@ export default function DatapointMetricsModal({ datapoint, onClose }) {
 
         {datapoint.type === 'rds' && datapoint.config?.dbInstanceId && (
           <TopSql dbInstanceId={datapoint.config.dbInstanceId} range={range} />
+        )}
+
+        {(buttons?.length > 0 || onEditButtons) && (
+          <div className="modal-links">
+            <div className="node-kicker">CUSTOM LINKS</div>
+            <NodeButtons buttons={buttons} onEdit={onEditButtons} />
+          </div>
         )}
       </div>
     </div>

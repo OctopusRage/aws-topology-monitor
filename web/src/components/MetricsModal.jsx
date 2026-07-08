@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../api.js';
 import MetricPanel from './MetricPanel.jsx';
+import NodeButtons from './NodeButtons.jsx';
 
 const RANGES = ['15m', '1h', '6h', '24h'];
 const SOURCES = [
@@ -8,7 +9,7 @@ const SOURCES = [
   { key: 'prometheus', label: 'node_exporter' },
 ];
 
-export default function MetricsModal({ targetGroup, lbArn, defaultSource, onClose }) {
+export default function MetricsModal({ targetGroup, lbArn, defaultSource, buttons, onEditButtons, onClose }) {
   const [range, setRange] = useState('1h');
   const [source, setSource] = useState(defaultSource || 'cloudwatch');
   const [data, setData] = useState(null);
@@ -101,6 +102,13 @@ export default function MetricsModal({ targetGroup, lbArn, defaultSource, onClos
             ))}
           </div>
         </div>
+
+        {(buttons?.length > 0 || onEditButtons) && (
+          <div className="modal-links">
+            <div className="node-kicker">CUSTOM LINKS</div>
+            <NodeButtons buttons={buttons} onEdit={onEditButtons} />
+          </div>
+        )}
       </div>
     </div>
   );

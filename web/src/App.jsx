@@ -171,6 +171,14 @@ function Dashboard() {
 
   // Custom link buttons: open the editor for a node, and save its buttons.
   const openButtonEditor = useCallback((key, title) => setButtonEditor({ key, title }), []);
+  // Props for rendering a node's custom links inside its monitoring modal.
+  const buttonProps = useCallback(
+    (key, title) => ({
+      buttons: customButtons[key] || [],
+      onEditButtons: isAdmin ? () => openButtonEditor(key, title) : undefined,
+    }),
+    [customButtons, isAdmin, openButtonEditor]
+  );
   const saveButtons = useCallback((key, list) => {
     setCustomButtons((prev) => {
       const next = { ...prev };
@@ -724,18 +732,12 @@ function Dashboard() {
     }
 
     // Custom link buttons for a node (buttons for all, edit affordance for admins).
+    // TG / instance / standalone-TG links live in their monitoring modals; the
+    // instance-group container has no modal, so it keeps its links inline.
     const btnData = (key, title) => ({
       buttons: customButtons[key] || [],
       onEditButtons: isAdmin ? () => openButtonEditor(key, title) : undefined,
     });
-
-    // Attach custom buttons to the inherited target-group nodes (all view modes).
-    const TG_NODE_TYPES = ['targetGroup', 'tgN', 'tgRadial'];
-    base.nodes = base.nodes.map((n) =>
-      TG_NODE_TYPES.includes(n.type)
-        ? { ...n, data: { ...n.data, ...btnData(`tg:${n.id}`, n.data?.tg?.name) } }
-        : n
-    );
 
     // Data points live in one or more named groups; a point dragged out becomes
     // "pinned" and stands alone. Each group renders a container + its members.
@@ -844,7 +846,6 @@ function Dashboard() {
                 source: 'cloudwatch',
                 config: { instanceId: inst.id, privateIp: inst.privateIp },
               }),
-            ...btnData(`inst:${inst.id}`, inst.name),
           },
         });
       });
@@ -878,7 +879,6 @@ function Dashboard() {
           total: n,
           onOpen: () => openMetrics(tg, tg.lbArn, tg.lbArn ? 'cloudwatch' : 'prometheus'),
           onRemove: () => removeStandaloneTG(s.tgArn),
-          ...btnData(`stg:${s.tgArn}`, tg.name),
         },
         draggable: true,
       });
@@ -1311,6 +1311,7 @@ function Dashboard() {
           targetGroup={activeTg.tg}
           lbArn={activeTg.lbArn ?? selected}
           defaultSource={activeTg.defaultSource}
+          {...buttonProps(`tg:${activeTg.tg.arn}`, activeTg.tg.name)}
           onClose={() => setActiveTg(null)}
         />
       )}
@@ -1356,7 +1357,13 @@ function Dashboard() {
         />
       )}
       {activeDp && (
-        <DatapointMetricsModal datapoint={activeDp} onClose={() => setActiveDp(null)} />
+        <DatapointMetricsModal
+          datapoint={activeDp}
+          {...(activeDp.type === 'ec2' && activeDp.config?.instanceId
+            ? buttonProps(`inst:${activeDp.config.instanceId}`, activeDp.label)
+            : {})}
+          onClose={() => setActiveDp(null)}
+        />
       )}
     </div>
   );

@@ -1,4 +1,3 @@
-import NodeButtons from './NodeButtons.jsx';
 import { Handle, Position } from 'reactflow';
 
 const healthColor = {
@@ -37,7 +36,6 @@ export function TgNeuralNode({ data }) {
       <div className="nn-tg-sub">
         {empty ? 'no targets' : `${healthy}/${total} healthy`}
       </div>
-      <NodeButtons buttons={buttons} onEdit={onEditButtons} />
       <Handle type="source" position={Position.Right} className="nn-handle" />
     </div>
   );

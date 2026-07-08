@@ -1,4 +1,3 @@
-import NodeButtons from './NodeButtons.jsx';
 import { Handle, Position } from 'reactflow';
 
 // Central ELB with source handles on all four sides so spokes can leave from
@@ -65,7 +64,6 @@ export function TargetGroupRadialNode({ data }) {
         </div>
       </div>
       {empty && <div className="tg-empty">no registered targets</div>}
-      <NodeButtons buttons={buttons} onEdit={onEditButtons} />
     </div>
   );
 }

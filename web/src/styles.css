@@ -886,7 +886,12 @@ button.pw-gen:hover { border-color: var(--accent-2); }
   border: 1px dashed var(--node-border); border-radius: 6px; padding: 3px 7px; cursor: pointer;
 }
 .react-flow__node:hover .node-btn-edit { display: inline-flex; }
+/* inside a monitoring modal the edit button is always visible (no node to hover) */
+.modal .node-btn-edit { display: inline-flex; }
 .node-btn-edit:hover { color: var(--text); border-color: var(--accent-2); }
+.modal-links { padding: 4px 24px 22px; }
+.modal-links .node-btns { margin-top: 8px; }
+.modal-links .node-btn-link { max-width: 320px; font-size: 12px; padding: 5px 12px; }
 
 /* ---------- Custom links editor modal ---------- */
 .btns-modal { width: min(560px, 96vw); }

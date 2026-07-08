@@ -57,7 +57,6 @@ export function InstanceNode({ data }) {
           <span>{inst.privateIp || '—'}</span>
           <span>{inst.type || inst.state}</span>
         </div>
-        <NodeButtons buttons={buttons} onEdit={onEditButtons} />
       </div>
     </div>
   );

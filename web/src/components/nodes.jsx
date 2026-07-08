@@ -1,4 +1,3 @@
-import NodeButtons from './NodeButtons.jsx';
 import { Handle, Position } from 'reactflow';
 
 const healthColor = {
@@ -60,7 +59,6 @@ export function TargetGroupNode({ data }) {
         </div>
       </div>
       {empty && <div className="tg-empty">no registered targets</div>}
-      <NodeButtons buttons={buttons} onEdit={onEditButtons} />
     </div>
   );
 }
