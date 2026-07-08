@@ -29,6 +29,18 @@ const TG_TYPES = ['targetGroup', 'tgN', 'tgRadial'];
 const SRV_TYPES = ['server', 'serverN'];
 const ELB_TYPES = ['elb', 'elbN', 'elbRadial'];
 
+// Serialize the user-editable overlay (everything a saved view stores) so we can
+// detect unsaved work by comparing against the last saved/loaded snapshot.
+const overlaySignature = (o = {}) =>
+  JSON.stringify({
+    datapoints: o.datapoints || [],
+    dpGroupPos: o.dpGroupPos || null,
+    connections: o.connections || [],
+    instanceGroups: o.instanceGroups || [],
+    standaloneTGs: o.standaloneTGs || [],
+  });
+const EMPTY_OVERLAY_SIG = overlaySignature();
+
 // stable merged map so React Flow doesn't warn / rebuild
 const nodeTypes = {
   ...gridNodeTypes,
@@ -56,6 +68,7 @@ function Dashboard() {
 
   // data points + saved views
   const [datapoints, setDatapoints] = useState([]);
+  const [dpGroupPos, setDpGroupPos] = useState(null); // data-point group top-left
   const [connections, setConnections] = useState([]);
   const [instanceGroups, setInstanceGroups] = useState([]);
   const [showAddInstances, setShowAddInstances] = useState(false);
@@ -70,6 +83,13 @@ function Dashboard() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const rf = useRef(null);
+
+  // Signature of the overlay as last saved/loaded — anything different is
+  // unsaved work. Initialized to the empty overlay (a fresh base view is clean).
+  const savedOverlayRef = useRef(EMPTY_OVERLAY_SIG);
+  const currentOverlaySig = () =>
+    overlaySignature({ datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs });
+  const hasUnsavedWork = () => currentOverlaySig() !== savedOverlayRef.current;
 
   const openMetrics = useCallback(
     (tg, lbArn = null, defaultSource = 'cloudwatch') =>
@@ -134,11 +154,17 @@ function Dashboard() {
 
   // Persist a dragged position (data points pin; instance groups move as a unit).
   const onNodeDragStop = useCallback((_, node) => {
-    if (String(node.id).startsWith('dp:')) {
+    if (node.id === 'dp-group') {
+      // Move the whole data-point group as a unit (children follow automatically).
+      setDpGroupPos(node.position);
+    } else if (String(node.id).startsWith('dp:')) {
       const id = node.id.slice(3);
+      // A child dragged out pins in place — use absolute coords since its
+      // position is relative to the (parented) group while it's inside.
+      const pos = node.positionAbsolute || node.position;
       setDatapoints((dps) =>
         dps.map((d) =>
-          d.id === id ? { ...d, position: node.position, pinned: true } : d
+          d.id === id ? { ...d, position: pos, pinned: true } : d
         )
       );
     } else if (String(node.id).startsWith('ig:')) {
@@ -184,28 +210,53 @@ function Dashboard() {
     if (!id) {
       setCurrentView(null);
       setDatapoints([]);
+      setDpGroupPos(null);
       setConnections([]);
       setInstanceGroups([]);
       setStandaloneTGs([]);
+      savedOverlayRef.current = EMPTY_OVERLAY_SIG;
       return;
     }
     try {
       const v = await api.getView(Number(id));
       setSelected(v.baseLbArn);
       setDatapoints(v.data?.datapoints || []);
+      setDpGroupPos(v.data?.datapointGroupPos || null);
       setConnections(v.data?.connections || []);
       setInstanceGroups(v.data?.instanceGroups || []);
       setStandaloneTGs(v.data?.standaloneTargetGroups || []);
       setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy });
+      // Baseline = what we just loaded, so it isn't flagged as unsaved work.
+      savedOverlayRef.current = overlaySignature({
+        datapoints: v.data?.datapoints,
+        dpGroupPos: v.data?.datapointGroupPos,
+        connections: v.data?.connections,
+        instanceGroups: v.data?.instanceGroups,
+        standaloneTGs: v.data?.standaloneTargetGroups,
+      });
     } catch (e) {
       setError(String(e.message || e));
     }
+  }, []);
+
+  // Switch the base ELB, discarding the current overlay (its additions belong to
+  // the view we're leaving, not the new one).
+  const switchBaseView = useCallback((arn) => {
+    setSelected(arn);
+    setCurrentView(null);
+    setDatapoints([]);
+    setDpGroupPos(null);
+    setConnections([]);
+    setInstanceGroups([]);
+    setStandaloneTGs([]);
+    savedOverlayRef.current = EMPTY_OVERLAY_SIG;
   }, []);
 
   const saveView = useCallback(async () => {
     try {
       const data = {
         datapoints,
+        datapointGroupPos: dpGroupPos,
         connections,
         instanceGroups,
         standaloneTargetGroups: standaloneTGs.map(({ tgArn, name, position }) => ({
@@ -226,11 +277,13 @@ function Dashboard() {
         const created = await api.createView({ name, baseLbArn: selected, data });
         setCurrentView({ id: created.id, name: created.name, createdBy: created.createdBy });
       }
+      // Everything is now persisted — this becomes the clean baseline.
+      savedOverlayRef.current = currentOverlaySig();
       await loadViewsList();
     } catch (e) {
       setError(String(e.message || e));
     }
-  }, [currentView, selected, datapoints, connections, instanceGroups, standaloneTGs, loadViewsList]);
+  }, [currentView, selected, datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, loadViewsList]);
 
   // Which view is "active" right now — a saved view, or just the base ELB.
   const activeRef = currentView?.id
@@ -254,6 +307,19 @@ function Dashboard() {
   useEffect(() => {
     api.health().then(setHealth).catch(() => {});
   }, []);
+
+  // Warn on tab close / reload while there's unsaved overlay work. No deps: it
+  // must re-bind each render to close over the latest state for hasUnsavedWork().
+  useEffect(() => {
+    const handler = (e) => {
+      if (hasUnsavedWork()) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  });
 
   // On mount: load ELBs + saved views, then open the user's startup view.
   const initedRef = useRef(false);
@@ -337,7 +403,8 @@ function Dashboard() {
 
     // Data points auto-arrange into a labeled group; ones the user drags out
     // become "pinned" and keep their own position outside the group.
-    const DP_COLS = 2, CW = 206, CH = 74, GX = -470, GY = -250, PAD = 16, HEAD = 28;
+    const DP_COLS = 2, CW = 206, CH = 74, PAD = 16, HEAD = 28;
+    const groupPos = dpGroupPos || { x: -486, y: -278 };
     const autoCount = datapoints.filter((d) => !d.pinned).length;
     const dpNodes = [];
     if (autoCount > 0) {
@@ -346,33 +413,39 @@ function Dashboard() {
       dpNodes.push({
         id: 'dp-group',
         type: 'dpGroup',
-        position: { x: GX - PAD, y: GY - HEAD },
+        position: groupPos,
         style: {
           width: cols * 190 + (cols - 1) * 16 + PAD * 2,
           height: rows * 58 + (rows - 1) * 16 + HEAD + PAD,
         },
         className: 'dp-group-node',
-        draggable: false,
-        selectable: false,
+        draggable: true,
+        selectable: true,
         data: {},
       });
     }
     let ai = 0;
     for (const dp of datapoints) {
-      let position;
-      if (dp.pinned && dp.position) {
-        position = dp.position;
-      } else {
-        position = { x: GX + (ai % DP_COLS) * CW, y: GY + Math.floor(ai / DP_COLS) * CH };
-        ai++;
-      }
-      dpNodes.push({
+      const node = {
         id: `dp:${dp.id}`,
         type: 'datapoint',
-        position,
         data: { dp, onOpen: () => setActiveDp(dp), onRemove: () => removeDatapoint(dp.id) },
         draggable: true,
-      });
+      };
+      if (dp.pinned && dp.position) {
+        // Standalone (dragged out of the group) — absolute canvas position.
+        node.position = dp.position;
+      } else {
+        // Auto-arranged — a child of the group so it moves with it, but with no
+        // `extent` so the user can still drag it out to pin it.
+        node.parentId = 'dp-group';
+        node.position = {
+          x: PAD + (ai % DP_COLS) * CW,
+          y: HEAD + Math.floor(ai / DP_COLS) * CH,
+        };
+        ai++;
+      }
+      dpNodes.push(node);
     }
     const connEdges = connections.map((c, i) => ({
       id: `conn:${i}:${c.source}->${c.target}`,
@@ -489,6 +562,7 @@ function Dashboard() {
     openMetrics,
     viewMode,
     datapoints,
+    dpGroupPos,
     connections,
     removeDatapoint,
     instanceGroups,
@@ -618,8 +692,17 @@ function Dashboard() {
             <select
               value={selected}
               onChange={(e) => {
-                setSelected(e.target.value);
-                setCurrentView(null); // manual base change → no longer a saved view
+                const next = e.target.value;
+                if (next === selected) return;
+                if (
+                  hasUnsavedWork() &&
+                  !window.confirm(
+                    'There is unsaved work in this view (data points / instance groups / connections). ' +
+                      'Switching the base ELB will discard it. Continue?'
+                  )
+                )
+                  return; // controlled select snaps back to the current value
+                switchBaseView(next);
               }}
             >
               {elbs.length === 0 && <option value="">No ELBs found</option>}
@@ -699,7 +782,16 @@ function Dashboard() {
               <select
                 className="views-select"
                 value={currentView?.id || ''}
-                onChange={(e) => loadView(e.target.value)}
+                onChange={(e) => {
+                  if (
+                    hasUnsavedWork() &&
+                    !window.confirm(
+                      'There is unsaved work in this view. Loading another view will discard it. Continue?'
+                    )
+                  )
+                    return; // controlled select snaps back to the current value
+                  loadView(e.target.value);
+                }}
                 title="Shared saved views"
               >
                 <option value="">— None (base only) —</option>
@@ -754,8 +846,6 @@ function Dashboard() {
           onConnect={onConnect}
           onEdgesDelete={onEdgesDelete}
           nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.2 }}
           minZoom={0.2}
           maxZoom={1.75}
           proOptions={{ hideAttribution: true }}
