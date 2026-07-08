@@ -40,8 +40,6 @@
       @keyframes breathe { 0%,100%{ opacity:.5; transform:scale(1) } 50%{ opacity:.75; transform:scale(1.1) } }
       .srv { animation: blink 2.6s ease-in-out infinite; }
       @keyframes blink { 0%,100%{ opacity:1 } 50%{ opacity:.4 } }
-      .spark { stroke-dasharray: 240; stroke-dashoffset: 240; animation: draw 3.2s ease-in-out infinite; }
-      @keyframes draw { 0%{ stroke-dashoffset:240 } 55%,100%{ stroke-dashoffset:0 } }
       .title { fill:url(#titleFill); font-size:48px; font-weight:800; letter-spacing:-0.5px; }
       .sub { fill:#9498ab; font-size:18px; }
       .chip { fill:#14161f; stroke:#292c3d; }

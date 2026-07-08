@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="AWS Topology Monitor" width="100%">
+  <img src="assets/banner-v2.svg" alt="AWS Topology Monitor" width="100%">
 </p>
 
 # AWS Topology Monitor
