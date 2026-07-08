@@ -274,6 +274,13 @@ button.pw-gen:hover { border-color: var(--accent-2); }
   font-size: 13px;
   border-bottom: 1px solid rgba(255,90,90,.3);
 }
+.banner.ok {
+  background: rgba(56, 211, 159, .12);
+  color: var(--green);
+  padding: 10px 20px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(56, 211, 159, .3);
+}
 
 /* ---------- Canvas ---------- */
 .canvas { flex: 1; position: relative; }

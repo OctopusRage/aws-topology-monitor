@@ -90,6 +90,7 @@ function Dashboard() {
   const [activeTg, setActiveTg] = useState(null);
   const [activeElb, setActiveElb] = useState(null); // { lbArn, name } for the rules modal
   const [activeIg, setActiveIg] = useState(null); // instance-group id for its detail modal
+  const [notice, setNotice] = useState(null); // transient success toast
   const [viewMode, setViewMode] = useState('neural'); // 'neural' | 'radial' | 'grid'
   const [modeUnlocked, setModeUnlocked] = useState(false); // override a saved view's layout lock
 
@@ -181,6 +182,7 @@ function Dashboard() {
     }),
     [customButtons, isAdmin, openButtonEditor]
   );
+  const pendingLinkSaveRef = useRef(false);
   const saveButtons = useCallback((key, list) => {
     setCustomButtons((prev) => {
       const next = { ...prev };
@@ -189,6 +191,7 @@ function Dashboard() {
       return next;
     });
     setButtonEditor(null);
+    pendingLinkSaveRef.current = true; // auto-persist right after the state updates
   }, []);
 
   // ── Canvas annotations (grouping frames + text labels) ──
@@ -564,10 +567,26 @@ function Dashboard() {
       savedOverlayRef.current = currentOverlaySig();
       setModeUnlocked(false);
       await loadViewsList();
+      return true;
     } catch (e) {
       setError(String(e.message || e));
+      return false;
     }
   }, [currentView, selected, viewMode, datapoints, dataGroups, connections, instanceGroups, standaloneTGs, annotations, nodePositions, customButtons, loadViewsList]);
+
+  // Auto-save after editing custom links (only when in a saved view — a base
+  // view has nothing to update yet, so it still needs an explicit Save as…).
+  useEffect(() => {
+    if (!pendingLinkSaveRef.current) return;
+    pendingLinkSaveRef.current = false;
+    if (currentView?.id) {
+      saveView().then((ok) => {
+        if (!ok) return;
+        setNotice('✓ Links saved');
+        setTimeout(() => setNotice((n) => (n === '✓ Links saved' ? null : n)), 1800);
+      });
+    }
+  }, [customButtons, currentView, saveView]);
 
   // Export the whole canvas (fit to all nodes) as a downloadable SVG.
   const [exporting, setExporting] = useState(false);
@@ -1256,6 +1275,7 @@ function Dashboard() {
       )}
 
       {error && <div className="banner error">⚠ {error}</div>}
+      {notice && <div className="banner ok">{notice}</div>}
 
       <div className="canvas">
         {loading && <div className="canvas-loading">Loading topology…</div>}
