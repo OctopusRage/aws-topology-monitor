@@ -19,6 +19,7 @@ import AccountModal from './components/AccountModal.jsx';
 import { datapointNodeTypes } from './components/datapointNode.jsx';
 import { instanceNodeTypes } from './components/instanceNodes.jsx';
 import { standaloneTgNodeTypes } from './components/standaloneTgNode.jsx';
+import { annotationNodeTypes } from './components/annotationNodes.jsx';
 import AddDataPointModal from './components/AddDataPointModal.jsx';
 import AddInstancesModal from './components/AddInstancesModal.jsx';
 import AddTargetGroupModal from './components/AddTargetGroupModal.jsx';
@@ -38,6 +39,7 @@ const overlaySignature = (o = {}) =>
     connections: o.connections || [],
     instanceGroups: o.instanceGroups || [],
     standaloneTGs: o.standaloneTGs || [],
+    annotations: o.annotations || [],
   });
 const EMPTY_OVERLAY_SIG = overlaySignature();
 
@@ -49,6 +51,7 @@ const nodeTypes = {
   ...datapointNodeTypes,
   ...instanceNodeTypes,
   ...standaloneTgNodeTypes,
+  ...annotationNodeTypes,
 };
 
 function Dashboard() {
@@ -75,6 +78,8 @@ function Dashboard() {
   const [showAddInstances, setShowAddInstances] = useState(false);
   const [standaloneTGs, setStandaloneTGs] = useState([]); // [{tgArn,name,position}]
   const [standaloneTgData, setStandaloneTgData] = useState({}); // tgArn -> live tg
+  // Canvas annotations to organize a big view: grouping frames + text labels.
+  const [annotations, setAnnotations] = useState([]);
   const [showAddTG, setShowAddTG] = useState(false);
   const [views, setViews] = useState([]);
   const [currentView, setCurrentView] = useState(null); // {id,name,createdBy}
@@ -89,7 +94,7 @@ function Dashboard() {
   // unsaved work. Initialized to the empty overlay (a fresh base view is clean).
   const savedOverlayRef = useRef(EMPTY_OVERLAY_SIG);
   const currentOverlaySig = () =>
-    overlaySignature({ datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs });
+    overlaySignature({ datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, annotations });
   // Switching a saved view's layout (once unlocked) is also unsaved work.
   const modeChanged = () => !!currentView?.viewMode && currentView.viewMode !== viewMode;
   const hasUnsavedWork = () => currentOverlaySig() !== savedOverlayRef.current || modeChanged();
@@ -110,6 +115,44 @@ function Dashboard() {
 
   const removeStandaloneTG = useCallback((tgArn) => {
     setStandaloneTGs((prev) => prev.filter((s) => s.tgArn !== tgArn));
+  }, []);
+
+  // ── Canvas annotations (grouping frames + text labels) ──
+  const addAnnotation = useCallback((kind) => {
+    const base =
+      kind === 'box'
+        ? { kind: 'box', width: 320, height: 200, dashed: true, text: '' }
+        : { kind: 'label', width: 160, height: 44, text: 'Label' };
+
+    // Spawn at the center of what's currently on screen, converted to canvas
+    // coordinates (accounts for pan/zoom). Fall back to the origin if unavailable.
+    let center = { x: 0, y: 0 };
+    const inst = rf.current;
+    const paneEl = document.querySelector('.react-flow');
+    if (inst && paneEl) {
+      const r = paneEl.getBoundingClientRect();
+      const screenMid = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      if (inst.screenToFlowPosition) center = inst.screenToFlowPosition(screenMid);
+      else if (inst.project) center = inst.project({ x: r.width / 2, y: r.height / 2 });
+    }
+
+    setAnnotations((prev) => {
+      // Slight stagger so repeated adds don't land exactly on top of each other.
+      const off = (prev.length % 6) * 18;
+      const position = {
+        x: center.x - base.width / 2 + off,
+        y: center.y - base.height / 2 + off,
+      };
+      return [...prev, { id: crypto.randomUUID(), position, ...base }];
+    });
+  }, []);
+
+  const updateAnnotation = useCallback((id, patch) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  }, []);
+
+  const removeAnnotation = useCallback((id) => {
+    setAnnotations((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
   const removeDatapoint = useCallback((id) => {
@@ -180,6 +223,11 @@ function Dashboard() {
       setStandaloneTGs((gs) =>
         gs.map((g) => (g.tgArn === arn ? { ...g, position: node.position } : g))
       );
+    } else if (String(node.id).startsWith('anno:')) {
+      const id = node.id.slice(5);
+      setAnnotations((as) =>
+        as.map((a) => (a.id === id ? { ...a, position: node.position } : a))
+      );
     }
   }, []);
 
@@ -217,6 +265,7 @@ function Dashboard() {
       setConnections([]);
       setInstanceGroups([]);
       setStandaloneTGs([]);
+      setAnnotations([]);
       savedOverlayRef.current = EMPTY_OVERLAY_SIG;
       setModeUnlocked(false);
       return;
@@ -230,6 +279,7 @@ function Dashboard() {
       setConnections(v.data?.connections || []);
       setInstanceGroups(v.data?.instanceGroups || []);
       setStandaloneTGs(v.data?.standaloneTargetGroups || []);
+      setAnnotations(v.data?.annotations || []);
       setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy, viewMode: v.data?.viewMode || null });
       setModeUnlocked(false); // each opened view starts locked to its layout
       // Baseline = what we just loaded, so it isn't flagged as unsaved work.
@@ -239,6 +289,7 @@ function Dashboard() {
         connections: v.data?.connections,
         instanceGroups: v.data?.instanceGroups,
         standaloneTGs: v.data?.standaloneTargetGroups,
+        annotations: v.data?.annotations,
       });
     } catch (e) {
       setError(String(e.message || e));
@@ -255,6 +306,7 @@ function Dashboard() {
     setConnections([]);
     setInstanceGroups([]);
     setStandaloneTGs([]);
+    setAnnotations([]);
     savedOverlayRef.current = EMPTY_OVERLAY_SIG;
     setModeUnlocked(false);
   }, []);
@@ -272,6 +324,7 @@ function Dashboard() {
           name,
           position,
         })),
+        annotations,
       };
       if (currentView?.id) {
         await api.updateView(currentView.id, {
@@ -294,7 +347,7 @@ function Dashboard() {
     } catch (e) {
       setError(String(e.message || e));
     }
-  }, [currentView, selected, viewMode, datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, loadViewsList]);
+  }, [currentView, selected, viewMode, datapoints, dpGroupPos, connections, instanceGroups, standaloneTGs, annotations, loadViewsList]);
 
   // Which view is "active" right now — a saved view, or just the base ELB.
   const activeRef = currentView?.id
@@ -563,8 +616,49 @@ function Dashboard() {
       });
     }
 
+    // Annotation frames (behind everything) and text labels (on top).
+    const annoBoxes = [];
+    const annoLabels = [];
+    for (const a of annotations) {
+      if (a.kind === 'box') {
+        annoBoxes.push({
+          id: `anno:${a.id}`,
+          type: 'annoBox',
+          position: a.position,
+          style: { width: a.width || 320, height: a.height || 200 },
+          className: 'anno-box-node',
+          zIndex: 0,
+          data: {
+            text: a.text || '',
+            dashed: a.dashed !== false,
+            onRename: (text) => updateAnnotation(a.id, { text }),
+            onToggleDash: () => updateAnnotation(a.id, { dashed: !(a.dashed !== false) }),
+            onResize: (dims) => updateAnnotation(a.id, dims),
+            onRemove: () => removeAnnotation(a.id),
+          },
+        });
+      } else {
+        annoLabels.push({
+          id: `anno:${a.id}`,
+          type: 'annoLabel',
+          position: a.position,
+          style: { width: a.width || 160, height: a.height || 44 },
+          className: 'anno-label-node',
+          zIndex: 6,
+          data: {
+            text: a.text || '',
+            height: a.height || 44,
+            onRename: (text) => updateAnnotation(a.id, { text }),
+            onResize: (dims) => updateAnnotation(a.id, dims),
+            onRemove: () => removeAnnotation(a.id),
+          },
+        });
+      }
+    }
+
     return {
-      nodes: [...base.nodes, ...dpNodes, ...igNodes, ...stgNodes],
+      // frames first so they render behind the topology; labels last, on top
+      nodes: [...annoBoxes, ...base.nodes, ...dpNodes, ...igNodes, ...stgNodes, ...annoLabels],
       // base topology edges aren't user-deletable; only manual connections are
       edges: [...base.edges.map((e) => ({ ...e, deletable: false })), ...connEdges],
     };
@@ -572,6 +666,9 @@ function Dashboard() {
     topology,
     openMetrics,
     viewMode,
+    annotations,
+    updateAnnotation,
+    removeAnnotation,
     datapoints,
     dpGroupPos,
     connections,
@@ -637,10 +734,10 @@ function Dashboard() {
     setNodes((nds) =>
       nds.map((n) => {
         if (
-          ['datapoint', 'dpGroup', 'instanceGroup', 'instanceNode', 'standaloneTg'].includes(n.type) ||
+          ['datapoint', 'dpGroup', 'instanceGroup', 'instanceNode', 'standaloneTg', 'annoBox', 'annoLabel'].includes(n.type) ||
           String(n.id).startsWith('stg:')
         )
-          return n; // never dim data points / instances / standalone TGs
+          return n; // never dim data points / instances / standalone TGs / annotations
         const cls = !hoveredTg
           ? undefined
           : n.id === hoveredTg ||
@@ -848,6 +945,12 @@ function Dashboard() {
             </button>
             <button className="view-action" onClick={() => setShowAddTG(true)}>
               ＋ Target group
+            </button>
+            <button className="view-action" onClick={() => addAnnotation('box')} title="Add a grouping frame">
+              ＋ Frame
+            </button>
+            <button className="view-action" onClick={() => addAnnotation('label')} title="Add a text label">
+              ＋ Label
             </button>
             <button className="view-action save" onClick={saveView}>
               💾 {currentView?.id ? 'Save' : 'Save as…'}
