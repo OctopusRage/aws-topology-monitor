@@ -1,3 +1,4 @@
+import NodeButtons from './NodeButtons.jsx';
 import { Handle, Position } from 'reactflow';
 
 const healthColor = {
@@ -31,7 +32,7 @@ export function ElbNode({ data }) {
 }
 
 export function TargetGroupNode({ data }) {
-  const { tg, healthy, total, onClick } = data;
+  const { tg, healthy, total, onClick, buttons, onEditButtons } = data;
   const empty = total === 0;
   const allHealthy = !empty && healthy === total;
   return (
@@ -59,6 +60,7 @@ export function TargetGroupNode({ data }) {
         </div>
       </div>
       {empty && <div className="tg-empty">no registered targets</div>}
+      <NodeButtons buttons={buttons} onEdit={onEditButtons} />
     </div>
   );
 }

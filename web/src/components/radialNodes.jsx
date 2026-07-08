@@ -1,3 +1,4 @@
+import NodeButtons from './NodeButtons.jsx';
 import { Handle, Position } from 'reactflow';
 
 // Central ELB with source handles on all four sides so spokes can leave from
@@ -31,7 +32,7 @@ export function ElbRadialNode({ data }) {
 // Same container as the grid target group (servers live inside as children),
 // but the inbound handle sits on the side facing the central ELB.
 export function TargetGroupRadialNode({ data }) {
-  const { tg, healthy, total, onClick, handlePos } = data;
+  const { tg, healthy, total, onClick, handlePos, buttons, onEditButtons } = data;
   const empty = total === 0;
   const allHealthy = !empty && healthy === total;
   return (
@@ -64,6 +65,7 @@ export function TargetGroupRadialNode({ data }) {
         </div>
       </div>
       {empty && <div className="tg-empty">no registered targets</div>}
+      <NodeButtons buttons={buttons} onEdit={onEditButtons} />
     </div>
   );
 }

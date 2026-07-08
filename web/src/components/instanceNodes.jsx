@@ -1,3 +1,4 @@
+import NodeButtons from './NodeButtons.jsx';
 // Standalone instance groups — EC2 instances (e.g. workers) that aren't behind
 // a target group. Rendered as a container holding clickable instance nodes.
 import ConnectHandles from './ConnectHandles.jsx';
@@ -11,7 +12,7 @@ const stateColor = {
 };
 
 export function InstanceGroupNode({ data }) {
-  const { name, count, onRemove } = data;
+  const { name, count, onRemove, buttons, onEditButtons } = data;
   return (
     <div className="ig-node">
       <ConnectHandles />
@@ -25,6 +26,7 @@ export function InstanceGroupNode({ data }) {
         </div>
         <span className="ig-count">{count}</span>
       </div>
+      <NodeButtons buttons={buttons} onEdit={onEditButtons} />
       <button
         className="dp-remove ig-remove"
         title="Remove group"
@@ -40,7 +42,7 @@ export function InstanceGroupNode({ data }) {
 }
 
 export function InstanceNode({ data }) {
-  const { inst, onOpen } = data;
+  const { inst, onOpen, buttons, onEditButtons } = data;
   const color = stateColor[inst.state] || '#8a8fa3';
   return (
     <div className="inst-node" onClick={onOpen} title="Click to view resource usage">
@@ -55,6 +57,7 @@ export function InstanceNode({ data }) {
           <span>{inst.privateIp || '—'}</span>
           <span>{inst.type || inst.state}</span>
         </div>
+        <NodeButtons buttons={buttons} onEdit={onEditButtons} />
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import NodeButtons from './NodeButtons.jsx';
 // Standalone target group — a real target group (e.g. an ASG-autoscaled worker
 // pool) dropped on the canvas, NOT wired to the viewed ELB. Its instances are
 // fetched live so ASG scaling reflects automatically. Server children reuse the
@@ -5,7 +6,7 @@
 import ConnectHandles from './ConnectHandles.jsx';
 
 export function StandaloneTgNode({ data }) {
-  const { tg, healthy, total, onOpen, onRemove } = data;
+  const { tg, healthy, total, onOpen, onRemove, buttons, onEditButtons } = data;
   const empty = total === 0;
   const ok = !empty && healthy === total;
   return (
@@ -26,6 +27,7 @@ export function StandaloneTgNode({ data }) {
         </span>
       </div>
       {empty && <div className="tg-empty">no registered targets</div>}
+      <NodeButtons buttons={buttons} onEdit={onEditButtons} />
       <button
         className="dp-remove stg-remove"
         title="Remove from view"

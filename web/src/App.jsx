@@ -19,6 +19,7 @@ import { neuralNodeTypes } from './components/neuralNodes.jsx';
 import { radialNodeTypes } from './components/radialNodes.jsx';
 import MetricsModal from './components/MetricsModal.jsx';
 import AlbRulesModal from './components/AlbRulesModal.jsx';
+import NodeButtonsModal from './components/NodeButtonsModal.jsx';
 import Login from './components/Login.jsx';
 import UsersModal from './components/UsersModal.jsx';
 import AccountModal from './components/AccountModal.jsx';
@@ -47,6 +48,7 @@ const overlaySignature = (o = {}) =>
     standaloneTGs: o.standaloneTGs || [],
     annotations: o.annotations || [],
     nodePositions: o.nodePositions || {},
+    customButtons: o.customButtons || {},
   });
 const EMPTY_OVERLAY_SIG = overlaySignature();
 
@@ -102,6 +104,9 @@ function Dashboard() {
   // User-moved positions for base topology nodes (ELB/TG/servers), keyed by id,
   // so a dragged target group stays put across topology auto-refreshes.
   const [nodePositions, setNodePositions] = useState({});
+  // Admin-defined custom link buttons per node, keyed by a stable btnKey.
+  const [customButtons, setCustomButtons] = useState({});
+  const [buttonEditor, setButtonEditor] = useState(null); // { key, title }
   const [showAddTG, setShowAddTG] = useState(false);
   const [views, setViews] = useState([]);
   const [currentView, setCurrentView] = useState(null); // {id,name,createdBy}
@@ -116,7 +121,7 @@ function Dashboard() {
   // unsaved work. Initialized to the empty overlay (a fresh base view is clean).
   const savedOverlayRef = useRef(EMPTY_OVERLAY_SIG);
   const currentOverlaySig = () =>
-    overlaySignature({ datapoints, dataGroups, connections, instanceGroups, standaloneTGs, annotations, nodePositions });
+    overlaySignature({ datapoints, dataGroups, connections, instanceGroups, standaloneTGs, annotations, nodePositions, customButtons });
   // Switching a saved view's layout (once unlocked) is also unsaved work.
   const modeChanged = () => !!currentView?.viewMode && currentView.viewMode !== viewMode;
   // Only admins can save, so only they get the "unsaved work" guards; a regular
@@ -162,6 +167,18 @@ function Dashboard() {
 
   const removeStandaloneTG = useCallback((tgArn) => {
     setStandaloneTGs((prev) => prev.filter((s) => s.tgArn !== tgArn));
+  }, []);
+
+  // Custom link buttons: open the editor for a node, and save its buttons.
+  const openButtonEditor = useCallback((key, title) => setButtonEditor({ key, title }), []);
+  const saveButtons = useCallback((key, list) => {
+    setCustomButtons((prev) => {
+      const next = { ...prev };
+      if (list && list.length) next[key] = list;
+      else delete next[key];
+      return next;
+    });
+    setButtonEditor(null);
   }, []);
 
   // ── Canvas annotations (grouping frames + text labels) ──
@@ -436,6 +453,7 @@ function Dashboard() {
       setStandaloneTGs([]);
       setAnnotations([]);
       setNodePositions({});
+      setCustomButtons({});
       savedOverlayRef.current = EMPTY_OVERLAY_SIG;
       setModeUnlocked(false);
       return;
@@ -465,6 +483,7 @@ function Dashboard() {
       setStandaloneTGs(v.data?.standaloneTargetGroups || []);
       setAnnotations(v.data?.annotations || []);
       setNodePositions(v.data?.nodePositions || {});
+      setCustomButtons(v.data?.customButtons || {});
       setCurrentView({ id: v.id, name: v.name, createdBy: v.createdBy, viewMode: v.data?.viewMode || null });
       setModeUnlocked(false); // each opened view starts locked to its layout
       // Baseline = what we just loaded (migrated), so it isn't flagged as dirty.
@@ -476,6 +495,7 @@ function Dashboard() {
         standaloneTGs: v.data?.standaloneTargetGroups,
         annotations: v.data?.annotations,
         nodePositions: v.data?.nodePositions,
+        customButtons: v.data?.customButtons,
       });
     } catch (e) {
       setError(String(e.message || e));
@@ -494,6 +514,7 @@ function Dashboard() {
     setStandaloneTGs([]);
     setAnnotations([]);
     setNodePositions({});
+    setCustomButtons({});
     savedOverlayRef.current = EMPTY_OVERLAY_SIG;
     setModeUnlocked(false);
   }, []);
@@ -513,6 +534,7 @@ function Dashboard() {
         })),
         annotations,
         nodePositions,
+        customButtons,
       };
       if (currentView?.id) {
         await api.updateView(currentView.id, {
@@ -535,7 +557,7 @@ function Dashboard() {
     } catch (e) {
       setError(String(e.message || e));
     }
-  }, [currentView, selected, viewMode, datapoints, dataGroups, connections, instanceGroups, standaloneTGs, annotations, nodePositions, loadViewsList]);
+  }, [currentView, selected, viewMode, datapoints, dataGroups, connections, instanceGroups, standaloneTGs, annotations, nodePositions, customButtons, loadViewsList]);
 
   // Export the whole canvas (fit to all nodes) as a downloadable SVG.
   const [exporting, setExporting] = useState(false);
@@ -701,6 +723,20 @@ function Dashboard() {
       );
     }
 
+    // Custom link buttons for a node (buttons for all, edit affordance for admins).
+    const btnData = (key, title) => ({
+      buttons: customButtons[key] || [],
+      onEditButtons: isAdmin ? () => openButtonEditor(key, title) : undefined,
+    });
+
+    // Attach custom buttons to the inherited target-group nodes (all view modes).
+    const TG_NODE_TYPES = ['targetGroup', 'tgN', 'tgRadial'];
+    base.nodes = base.nodes.map((n) =>
+      TG_NODE_TYPES.includes(n.type)
+        ? { ...n, data: { ...n.data, ...btnData(`tg:${n.id}`, n.data?.tg?.name) } }
+        : n
+    );
+
     // Data points live in one or more named groups; a point dragged out becomes
     // "pinned" and stands alone. Each group renders a container + its members.
     const DP_COLS = 2, CW = 206, CH = 74, PAD = 16, HEAD = 28;
@@ -779,7 +815,12 @@ function Dashboard() {
         type: 'instanceGroup',
         position: pos,
         style: { width, height },
-        data: { name: g.name, count: n, onRemove: () => removeInstanceGroup(g.id) },
+        data: {
+          name: g.name,
+          count: n,
+          onRemove: () => removeInstanceGroup(g.id),
+          ...btnData(`ig:${g.id}`, g.name),
+        },
         draggable: true,
       });
       g.instances.forEach((inst, i) => {
@@ -803,6 +844,7 @@ function Dashboard() {
                 source: 'cloudwatch',
                 config: { instanceId: inst.id, privateIp: inst.privateIp },
               }),
+            ...btnData(`inst:${inst.id}`, inst.name),
           },
         });
       });
@@ -836,6 +878,7 @@ function Dashboard() {
           total: n,
           onOpen: () => openMetrics(tg, tg.lbArn, tg.lbArn ? 'cloudwatch' : 'prometheus'),
           onRemove: () => removeStandaloneTG(s.tgArn),
+          ...btnData(`stg:${s.tgArn}`, tg.name),
         },
         draggable: true,
       });
@@ -910,6 +953,9 @@ function Dashboard() {
     updateAnnotation,
     removeAnnotation,
     nodePositions,
+    customButtons,
+    isAdmin,
+    openButtonEditor,
     datapoints,
     dataGroups,
     connections,
@@ -1274,6 +1320,15 @@ function Dashboard() {
           lbArn={activeElb.lbArn}
           name={activeElb.name}
           onClose={() => setActiveElb(null)}
+        />
+      )}
+
+      {buttonEditor && (
+        <NodeButtonsModal
+          title={buttonEditor.title}
+          buttons={customButtons[buttonEditor.key] || []}
+          onSave={(list) => saveButtons(buttonEditor.key, list)}
+          onClose={() => setButtonEditor(null)}
         />
       )}
 
