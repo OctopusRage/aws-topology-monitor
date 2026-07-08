@@ -6,8 +6,11 @@ import ReactFlow, {
   ConnectionMode,
   useNodesState,
   useEdgesState,
+  getRectOfNodes,
+  getTransformForBounds,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { toSvg } from 'html-to-image';
 import DeletableEdge from './components/DeletableEdge.jsx';
 import { api } from './api.js';
 import { buildGraph, buildNeuralGraph, buildRadialGraph } from './layout.js';
@@ -511,6 +514,47 @@ function Dashboard() {
       setError(String(e.message || e));
     }
   }, [currentView, selected, viewMode, datapoints, dataGroups, connections, instanceGroups, standaloneTGs, annotations, nodePositions, loadViewsList]);
+
+  // Export the whole canvas (fit to all nodes) as a downloadable SVG.
+  const [exporting, setExporting] = useState(false);
+  const exportSvg = useCallback(async () => {
+    const vp = document.querySelector('.react-flow__viewport');
+    if (!vp || nodes.length === 0) return;
+    setExporting(true);
+    try {
+      const PAD = 60;
+      const bounds = getRectOfNodes(nodes);
+      const w = Math.round(Math.min(6000, Math.max(800, bounds.width + PAD * 2)));
+      const h = Math.round(Math.min(6000, Math.max(600, bounds.height + PAD * 2)));
+      const [x, y, zoom] = getTransformForBounds(bounds, w, h, 0.2, 2);
+      const dataUrl = await toSvg(vp, {
+        backgroundColor: '#0c0d14',
+        width: w,
+        height: h,
+        style: {
+          width: `${w}px`,
+          height: `${h}px`,
+          transform: `translate(${x}px, ${y}px) scale(${zoom})`,
+        },
+        // don't bake in hover-only affordances (edge ✕, resize handles)
+        filter: (el) =>
+          !(el.classList &&
+            (el.classList.contains('edge-delete') ||
+              el.classList.contains('react-flow__resize-control'))),
+      });
+      const base = (currentView?.name || 'topology')
+        .replace(/[^\w.-]+/g, '-')
+        .toLowerCase();
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `${base}.svg`;
+      a.click();
+    } catch (e) {
+      setError(`SVG export failed: ${String(e.message || e)}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [nodes, currentView]);
 
   // Which view is "active" right now — a saved view, or just the base ELB.
   const activeRef = currentView?.id
@@ -1113,6 +1157,14 @@ function Dashboard() {
               }
             >
               {isDefault ? '★' : '☆'} Default
+            </button>
+            <button
+              className="view-action"
+              onClick={exportSvg}
+              disabled={exporting}
+              title="Download the current canvas as an SVG"
+            >
+              {exporting ? '⏳ Exporting…' : '⭳ Export SVG'}
             </button>
             {isAdmin && (
               <>
