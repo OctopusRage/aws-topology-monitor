@@ -20,6 +20,7 @@ import { radialNodeTypes } from './components/radialNodes.jsx';
 import MetricsModal from './components/MetricsModal.jsx';
 import AlbRulesModal from './components/AlbRulesModal.jsx';
 import NodeButtonsModal from './components/NodeButtonsModal.jsx';
+import InstanceGroupModal from './components/InstanceGroupModal.jsx';
 import Login from './components/Login.jsx';
 import UsersModal from './components/UsersModal.jsx';
 import AccountModal from './components/AccountModal.jsx';
@@ -88,6 +89,7 @@ function Dashboard() {
   const [error, setError] = useState(null);
   const [activeTg, setActiveTg] = useState(null);
   const [activeElb, setActiveElb] = useState(null); // { lbArn, name } for the rules modal
+  const [activeIg, setActiveIg] = useState(null); // instance-group id for its detail modal
   const [viewMode, setViewMode] = useState('neural'); // 'neural' | 'radial' | 'grid'
   const [modeUnlocked, setModeUnlocked] = useState(false); // override a saved view's layout lock
 
@@ -731,14 +733,6 @@ function Dashboard() {
       );
     }
 
-    // Custom link buttons for a node (buttons for all, edit affordance for admins).
-    // TG / instance / standalone-TG links live in their monitoring modals; the
-    // instance-group container has no modal, so it keeps its links inline.
-    const btnData = (key, title) => ({
-      buttons: customButtons[key] || [],
-      onEditButtons: isAdmin ? () => openButtonEditor(key, title) : undefined,
-    });
-
     // Data points live in one or more named groups; a point dragged out becomes
     // "pinned" and stands alone. Each group renders a container + its members.
     const DP_COLS = 2, CW = 206, CH = 74, PAD = 16, HEAD = 28;
@@ -821,7 +815,7 @@ function Dashboard() {
           name: g.name,
           count: n,
           onRemove: () => removeInstanceGroup(g.id),
-          ...btnData(`ig:${g.id}`, g.name),
+          onOpen: () => setActiveIg(g.id),
         },
         draggable: true,
       });
@@ -953,9 +947,6 @@ function Dashboard() {
     updateAnnotation,
     removeAnnotation,
     nodePositions,
-    customButtons,
-    isAdmin,
-    openButtonEditor,
     datapoints,
     dataGroups,
     connections,
@@ -1323,6 +1314,27 @@ function Dashboard() {
           onClose={() => setActiveElb(null)}
         />
       )}
+
+      {activeIg &&
+        (() => {
+          const g = instanceGroups.find((x) => x.id === activeIg);
+          if (!g) return null;
+          return (
+            <InstanceGroupModal
+              group={g}
+              {...buttonProps(`ig:${g.id}`, g.name)}
+              onOpenInstance={(inst) =>
+                setActiveDp({
+                  type: 'ec2',
+                  label: inst.name,
+                  source: 'cloudwatch',
+                  config: { instanceId: inst.id, privateIp: inst.privateIp },
+                })
+              }
+              onClose={() => setActiveIg(null)}
+            />
+          );
+        })()}
 
       {buttonEditor && (
         <NodeButtonsModal
