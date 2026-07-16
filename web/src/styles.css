@@ -803,6 +803,8 @@ button.pw-gen:hover { border-color: var(--accent-2); }
   z-index: 50;
   padding: 24px;
 }
+/* editors opened on top of another modal (e.g. custom-links) sit above it */
+.modal-backdrop.modal-nested { z-index: 70; }
 .modal {
   width: min(920px, 96vw);
   max-height: 92vh;

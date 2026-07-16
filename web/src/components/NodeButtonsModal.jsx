@@ -18,7 +18,7 @@ export default function NodeButtonsModal({ title, buttons, onSave, onClose }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop modal-nested" onClick={onClose}>
       <div className="modal btns-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
