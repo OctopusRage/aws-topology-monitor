@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { downloadFile, slug, stamp } from '../download.js';
 
 function ActionText({ action }) {
   if (action.type === 'forward') {
@@ -42,6 +43,31 @@ export default function AlbRulesModal({ lbArn, name, onClose }) {
 
   const listeners = data?.listeners || [];
 
+  // JSON keeps the nested listener → rules → conditions/actions shape intact,
+  // so the export stays faithful and is easy to diff / review.
+  const exportJson = () => {
+    const payload = {
+      loadBalancer: { name: name || null, arn: lbArn },
+      exportedAt: new Date().toISOString(),
+      listeners: listeners.map((l) => ({
+        listenerArn: l.listenerArn,
+        protocol: l.protocol,
+        port: l.port,
+        rules: (l.rules || []).map((r) => ({
+          priority: r.priority,
+          isDefault: r.isDefault,
+          conditions: r.conditions,
+          actions: r.actions,
+        })),
+      })),
+    };
+    downloadFile(
+      `elb-rules-${slug(name || 'load-balancer')}-${stamp()}.json`,
+      JSON.stringify(payload, null, 2),
+      'application/json'
+    );
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal rules-modal" onClick={(e) => e.stopPropagation()}>
@@ -51,7 +77,17 @@ export default function AlbRulesModal({ lbArn, name, onClose }) {
             <h2>{name || 'Listener rules'}</h2>
             <div className="modal-sub">Listener rules & routing</div>
           </div>
-          <button className="close-btn" onClick={onClose}>✕</button>
+          <div className="modal-header-actions">
+            <button
+              className="export-btn"
+              onClick={exportJson}
+              disabled={!listeners.length}
+              title="Download all listener rules as JSON"
+            >
+              ⬇ Export JSON
+            </button>
+            <button className="close-btn" onClick={onClose}>✕</button>
+          </div>
         </div>
 
         <div className="rules-body">

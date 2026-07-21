@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
 import { DP_TYPES } from './datapointNode.jsx';
 import MetricPanel from './MetricPanel.jsx';
+import { downloadFile, toCsv, slug, stamp } from '../download.js';
 import NodeButtons from './NodeButtons.jsx';
 
 const RANGES = ['15m', '1h', '6h', '24h'];
@@ -63,6 +64,19 @@ function TopSql({ dbInstanceId, range }) {
   const maxLoad = Math.max(0.001, ...queries.map((q) => q.load || 0));
   const hasCalls = queries.some((q) => q.calls != null);
 
+  // CSV: the data is tabular, so it drops straight into a spreadsheet.
+  const exportCsv = () => {
+    const rows = [
+      ['rank', 'db_load_aas', 'calls', 'statement'],
+      ...queries.map((q, i) => [i + 1, q.load ?? '', q.calls ?? '', q.sql ?? '']),
+    ];
+    downloadFile(
+      `top-sql-${slug(dbInstanceId)}-${range}-${stamp()}.csv`,
+      toCsv(rows),
+      'text/csv'
+    );
+  };
+
   return (
     <div className="topsql">
       <div className="node-kicker">
@@ -70,6 +84,14 @@ function TopSql({ dbInstanceId, range }) {
         <span className={`source-badge ${tq.source === 'performance-insights' ? 'prometheus' : 'mock'}`}>
           {tq.source === 'performance-insights' ? 'live · performance insights' : 'sample'}
         </span>
+        <button
+          className="export-btn topsql-export"
+          onClick={exportCsv}
+          disabled={!queries.length}
+          title="Download these queries as CSV"
+        >
+          ⬇ Export CSV
+        </button>
       </div>
       {tq.enabled === false && tq.reason && (
         <div className="modal-warn">{tq.reason} — showing sample.</div>
