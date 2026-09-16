@@ -35,7 +35,9 @@ export const config = {
   // Optional static key for scripts / CLI access (e.g. fetching instance IPs
   // to SSH into). Accepted as `Authorization: Bearer <key>` or `X-API-Key`
   // on every authenticated endpoint. Unset = disabled (session login only).
-  apiKey: process.env.API_KEY || '',
+  // A leaked secret-manager placeholder (e.g. Hormuz's `@secure:scope/KEY`
+  // when the secret value doesn't exist yet) must never act as a valid key.
+  apiKey: /^@secure:/.test(process.env.API_KEY || '') ? '' : process.env.API_KEY || '',
 
   // Default admin seeded on first run (only used when the users table is empty).
   admin: {
