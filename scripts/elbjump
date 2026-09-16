@@ -117,7 +117,7 @@ tgs_tsv() {       # from source json: arn <TAB> name  proto:port|kind  healthy/t
         (if .kind=="instance-group"
            then "\([.targets[]|select(.health=="running")]|length)/\(.targets|length) running"
            else "\([.targets[]|select(.health=="healthy")]|length)/\(.targets|length) healthy" end),
-        (if .kind=="standalone" then "(added)" else "" end)] | @tsv' <<<"$1"
+        (if .error then "⚠ \(.error)" elif .kind=="standalone" then "(added)" else "" end)] | @tsv' <<<"$1"
 }
 
 targets_tsv() {   # from tg json: id <TAB> name  privateIp  publicIp  health  az  type
@@ -141,7 +141,7 @@ if [[ "${1:-}" == list || "${1:-}" == ls ]]; then
   if [[ -n "${2:-}" ]]; then
     lb="$(source_json "$(resolve_key "$2")")"
     jq -r '"\(.name)  (\(.loadBalancer.scheme // .scheme // "-"), \(.loadBalancer.dnsName // .dnsName // "-"))"' <<<"$lb"
-    jq -r '.targetGroups[] | "  \(.name)  \(if .kind=="instance-group" then "instances" else "\(.protocol):\(.port)" end)\(if .kind=="standalone" then "  (added)" else "" end)",
+    jq -r '.targetGroups[] | "  \(.name)  \(if .kind=="instance-group" then "instances" else "\(.protocol):\(.port)" end)\(if .error then "  ⚠ \(.error)" elif .kind=="standalone" then "  (added)" else "" end)",
            (.targets[] | "      \(.name)\t\(.id)\t\(.privateIp // "-")\t\(.publicIp // "-")\t\(.health)")' <<<"$lb" | column -t -s $'\t'
   else
     sources_tsv | cut -f2- | column -t -s $'\t'

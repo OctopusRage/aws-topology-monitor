@@ -49,8 +49,12 @@ async function describeInstances(instanceIds) {
   const meta = new Map();
   const ids = [...new Set(instanceIds)];
   for (let i = 0; i < ids.length; i += 100) {
+    // Filter (not InstanceIds): a terminated/unknown id is silently omitted
+    // instead of failing the whole batch with InvalidInstanceID.NotFound.
     const out = await ec2.send(
-      new DescribeInstancesCommand({ InstanceIds: ids.slice(i, i + 100) })
+      new DescribeInstancesCommand({
+        Filters: [{ Name: 'instance-id', Values: ids.slice(i, i + 100) }],
+      })
     );
     for (const res of out.Reservations || []) {
       for (const inst of res.Instances || []) {

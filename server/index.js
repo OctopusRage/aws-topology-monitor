@@ -315,16 +315,28 @@ app.get('/api/views/:ref/targets', requireAuth, async (req, res) => {
     const base = lbs[0] || null;
     for (const tg of base?.targetGroups || []) targetGroups.push({ ...tg, kind: 'elb', via: base.name });
 
+    // A view can outlive the resources it references (deleted target group,
+    // terminated instance). Report those per group instead of failing the view.
     for (const s of v.data?.standaloneTargetGroups || []) {
       if (targetGroups.some((t) => t.arn === s.tgArn)) continue;
-      const tg = await provider.getStandaloneTargetGroup(s.tgArn);
+      let tg = null, error = 'target group not found';
+      try {
+        tg = await provider.getStandaloneTargetGroup(s.tgArn);
+      } catch (err) {
+        error = String(err.message || err);
+      }
       if (tg) targetGroups.push({ ...tg, kind: 'standalone' });
-      else targetGroups.push({ arn: s.tgArn, name: s.name, kind: 'standalone', targets: [], error: 'target group not found' });
+      else targetGroups.push({ arn: s.tgArn, name: s.name, kind: 'standalone', targets: [], error });
     }
 
     for (const g of v.data?.instanceGroups || []) {
       const saved = g.instances || [];
-      const live = await provider.getInstances(saved.map((i) => i.id));
+      let live = [];
+      try {
+        live = await provider.getInstances(saved.map((i) => i.id));
+      } catch {
+        live = []; // fall back to the IPs stored when the group was saved
+      }
       targetGroups.push({
         arn: `view:${v.id}/instance-group/${g.id}`,
         name: g.name,
