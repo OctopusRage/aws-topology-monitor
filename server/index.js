@@ -252,8 +252,7 @@ app.get('/api/elbs', requireAuth, async (_req, res) => {
 app.get('/api/elb/targets', requireAuth, async (req, res) => {
   const { lb, tg, health, format, ip: ipKind } = req.query;
   try {
-    let lbs = await provider.listElbTargets();
-    if (lb) lbs = lbs.filter((l) => l.name === lb || l.arn === lb);
+    let lbs = await provider.listElbTargets(lb || undefined);
     if (tg) {
       lbs = lbs
         .map((l) => ({ ...l, targetGroups: l.targetGroups.filter((t) => t.name === tg || t.arn === tg) }))

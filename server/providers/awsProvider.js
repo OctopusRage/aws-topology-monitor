@@ -373,11 +373,18 @@ export const awsProvider = {
   // Every load balancer → target groups → registered instances (with IPs).
   // Fans out one DescribeTargetHealth per target group, then resolves ALL
   // instance ids in one batched DescribeInstances instead of one per group.
-  async listElbTargets() {
-    const [lbOut, tgs] = await Promise.all([
-      elbv2.send(new DescribeLoadBalancersCommand({})),
-      allTargetGroups(),
-    ]);
+  // `lb` (optional, name or ARN) narrows the AWS calls to that one load
+  // balancer instead of describing every target group in the account.
+  async listElbTargets(lb) {
+    let lbOut = await elbv2.send(new DescribeLoadBalancersCommand({}));
+    if (lb) {
+      lbOut = { LoadBalancers: (lbOut.LoadBalancers || []).filter(
+        (l) => l.LoadBalancerName === lb || l.LoadBalancerArn === lb) };
+      if (lbOut.LoadBalancers.length === 0) return [];
+    }
+    const tgs = lb
+      ? await targetGroupsForLb(lbOut.LoadBalancers[0].LoadBalancerArn)
+      : await allTargetGroups();
     const healthByTg = new Map(
       await Promise.all(tgs.map(async (tg) => [tg.TargetGroupArn, await targetHealth(tg.TargetGroupArn)]))
     );

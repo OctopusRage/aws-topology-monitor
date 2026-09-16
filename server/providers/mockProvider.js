@@ -212,8 +212,8 @@ export const mockProvider = {
   },
 
   // Every load balancer → target groups → registered instances (with IPs).
-  async listElbTargets() {
-    return LOAD_BALANCERS.map((lb) => ({
+  async listElbTargets(lb) {
+    return LOAD_BALANCERS.filter((l) => !lb || l.name === lb || l.arn === lb).map((lb) => ({
       ...lb,
       targetGroups: lb.targetGroups.map(({ healthyThreshold, ...tg }) => ({
         ...tg,

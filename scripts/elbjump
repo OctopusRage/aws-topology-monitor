@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# elbjump — pick an ELB → target group → instance from aws-topology-monitor
+# and SSH into it (through the Teleport bastion, like tshjump).
+#
+#   elbjump                      interactive: ELB → target group → instance
+#   elbjump ELB                  skip the ELB picker
+#   elbjump ELB TG               skip ELB + target-group pickers
+#   elbjump ELB TG IP|NAME|ID    no pickers — connect straight away
+#   elbjump list                 print every ELB
+#   elbjump list ELB             print ELB's target groups + instances
+#   elbjump --print ...          print the ssh command instead of running it
+#   elbjump --ip ...             print only the chosen instance's IP
+#
+# Config: ~/.config/elbjump/.env  (KEY=value lines)
+#   URL=https://hormuz.qiscus.io/_stellar   base URL of aws-topology-monitor
+#   API_KEY=…                               static API key (server API_KEY)
+#   SSH_USER=ubuntu                         user on the instances
+#   BASTION=aji_tirta@awsjumpid.qiscus.io   tsh bastion; empty = plain ssh
+#   PROXY=teleport.qiscus.io                tsh proxy for auto-login
+#   USE_PUBLIC_IP=false                     ssh to publicIp instead of private
+#   HEALTHY_ONLY=false                      hide non-healthy targets
+
+set -euo pipefail
+
+CONF="${ELBJUMP_CONFIG:-$HOME/.config/elbjump/.env}"
+[[ -f "$CONF" ]] && { set -a; # shellcheck disable=SC1090
+  . "$CONF"; set +a; }
+URL="${URL:-${ELBJUMP_URL:-}}"
+API_KEY="${API_KEY:-${ELBJUMP_API_KEY:-}}"
+SSH_USER="${SSH_USER:-ubuntu}"
+BASTION="${BASTION-aji_tirta@awsjumpid.qiscus.io}"
+PROXY="${PROXY:-teleport.qiscus.io}"
+USE_PUBLIC_IP="${USE_PUBLIC_IP:-false}"
+HEALTHY_ONLY="${HEALTHY_ONLY:-false}"
+
+red()  { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+cyan() { printf '\033[36m%s\033[0m\n' "$*" >&2; }
+die()  { red "$*"; exit 1; }
+
+for t in curl jq; do command -v "$t" >/dev/null 2>&1 || die "$t not found in PATH"; done
+[[ -n "$URL" ]] || die "URL not set — create $CONF with URL=… and API_KEY=…"
+[[ -n "$API_KEY" ]] || die "API_KEY not set in $CONF"
+URL="${URL%/}"
+
+api() {
+  local out code body
+  out="$(curl -sS -w $'\n%{http_code}' -H "X-API-Key: $API_KEY" "$URL$1")" || die "request failed: $URL$1"
+  code="${out##*$'\n'}"; body="${out%$'\n'*}"
+  [[ "$code" == "200" ]] || die "HTTP $code from $1: $(jq -r '.error // .' <<<"$body" 2>/dev/null || echo "$body")"
+  printf '%s' "$body"
+}
+
+urlenc() { jq -rn --arg v "$1" '$v|@uri'; }
+
+# pick "<prompt>" "<header>"  — reads TSV rows on stdin (key<TAB>display…),
+# prints the chosen key. fzf when available, numbered menu otherwise.
+pick() {
+  local prompt="$1" header="$2" rows
+  mapfile -t rows
+  [[ ${#rows[@]} -gt 0 ]] || die "nothing to pick"
+  if [[ ${#rows[@]} -eq 1 ]]; then cut -f1 <<<"${rows[0]}"; return; fi
+  if command -v fzf >/dev/null 2>&1; then
+    printf '%s\n' "${rows[@]}" | column -t -s $'\t' \
+      | fzf --prompt="$prompt> " --height=50% --reverse --header="$header" --with-nth=2.. \
+      | awk '{print $1}'
+  else
+    local i=1
+    for r in "${rows[@]}"; do printf '  %2d) %s\n' "$i" "$(cut -f2- <<<"$r" | tr '\t' ' ')" >&2; ((i++)); done
+    local n; read -rp "$prompt #: " n < "${ELBJUMP_INPUT:-/dev/tty}"
+    [[ "$n" =~ ^[0-9]+$ ]] && (( n>=1 && n<=${#rows[@]} )) || die "invalid selection"
+    cut -f1 <<<"${rows[n-1]}"
+  fi
+}
+
+elbs_tsv() {      # arn <TAB> name  scheme  type  state
+  api /api/elbs | jq -r '.[] | [.arn, .name, .scheme, .type, .state] | @tsv'
+}
+
+lb_json() {       # full LB object with targetGroups[].targets[]
+  local body; body="$(api "/api/elb/targets?lb=$(urlenc "$1")")" || exit 1
+  jq -e '.loadBalancers[0]' <<<"$body" >/dev/null || die "load balancer '$1' not found"
+  jq '.loadBalancers[0]' <<<"$body"
+}
+
+tgs_tsv() {       # from lb json: arn <TAB> name  port  healthy/total
+  jq -r '.targetGroups[] | [.arn, .name, "\(.protocol):\(.port)",
+        "\([.targets[]|select(.health=="healthy")]|length)/\(.targets|length) healthy"] | @tsv' <<<"$1"
+}
+
+targets_tsv() {   # from tg json: id <TAB> name  privateIp  publicIp  health  az  type
+  jq -r --argjson ho "$([[ "$HEALTHY_ONLY" == true ]] && echo true || echo false)" \
+    '.targets[] | select(($ho|not) or .health=="healthy")
+     | [.id, .name, (.privateIp // "-"), (.publicIp // "-"), .health, (.az // "-"), (.instanceType // "-")] | @tsv' <<<"$1"
+}
+
+mode=run
+while [[ "${1:-}" == --* ]]; do
+  case "$1" in
+    --print) mode=print ;;
+    --ip) mode=ip ;;
+    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) die "unknown flag $1" ;;
+  esac
+  shift
+done
+
+if [[ "${1:-}" == list || "${1:-}" == ls ]]; then
+  if [[ -n "${2:-}" ]]; then
+    lb="$(lb_json "$2")"
+    jq -r '"\(.name)  (\(.scheme), \(.dnsName))"' <<<"$lb"
+    jq -r '.targetGroups[] | "  \(.name)  \(.protocol):\(.port)",
+           (.targets[] | "      \(.name)\t\(.id)\t\(.privateIp // "-")\t\(.publicIp // "-")\t\(.health)")' <<<"$lb" | column -t -s $'\t'
+  else
+    elbs_tsv | cut -f2- | column -t
+  fi
+  exit 0
+fi
+
+# ---- step 1: ELB -------------------------------------------------------------
+lb_name="${1:-}"
+if [[ -z "$lb_name" ]]; then
+  lb_arn="$(elbs_tsv | pick elb 'pick a load balancer')"
+  [[ -n "$lb_arn" ]] || { echo cancelled >&2; exit 130; }
+  lb_name="$lb_arn"
+fi
+lb="$(lb_json "$lb_name")"
+lb_name="$(jq -r .name <<<"$lb")"
+
+# ---- step 2: target group ----------------------------------------------------
+tg_name="${2:-}"
+if [[ -z "$tg_name" ]]; then
+  tg_arn="$(tgs_tsv "$lb" | pick "$lb_name" 'pick a target group')"
+  [[ -n "$tg_arn" ]] || { echo cancelled >&2; exit 130; }
+  tg="$(jq -e --arg a "$tg_arn" '.targetGroups[] | select(.arn==$a)' <<<"$lb")"
+else
+  tg="$(jq -e --arg n "$tg_name" '.targetGroups[] | select(.name==$n or .arn==$n)' <<<"$lb")" \
+    || die "target group '$tg_name' not found in $lb_name"
+fi
+tg_name="$(jq -r .name <<<"$tg")"
+
+# ---- step 3: instance --------------------------------------------------------
+sel="${3:-}"
+if [[ -z "$sel" ]]; then
+  sel="$(targets_tsv "$tg" | pick "$tg_name" 'pick an instance (name  private-ip  public-ip  health  az  type)')"
+  [[ -n "$sel" ]] || { echo cancelled >&2; exit 130; }
+fi
+inst="$(jq -e --arg s "$sel" '.targets[] | select(.id==$s or .name==$s or .privateIp==$s or .publicIp==$s)' <<<"$tg")" \
+  || die "instance '$sel' not found in $tg_name"
+
+ip_key=privateIp; [[ "$USE_PUBLIC_IP" == true ]] && ip_key=publicIp
+ip="$(jq -r ".$ip_key // empty" <<<"$inst")"
+[[ -n "$ip" ]] || die "instance $(jq -r .id <<<"$inst") has no $ip_key"
+
+[[ "$mode" == ip ]] && { echo "$ip"; exit 0; }
+
+if [[ -n "$BASTION" ]]; then
+  cmd="tsh ssh -A -t $BASTION ssh -A $SSH_USER@$ip"
+else
+  cmd="ssh $SSH_USER@$ip"
+fi
+[[ "$mode" == print ]] && { echo "$cmd"; exit 0; }
+
+cyan "→ $lb_name / $tg_name / $(jq -r '"\(.name) (\(.id), \(.health))"' <<<"$inst") — $ip"
+if [[ -n "$BASTION" ]] && ! tsh status >/dev/null 2>&1; then
+  printf '\033[33mNot logged in to Teleport — running tsh login...\033[0m\n' >&2
+  tsh login --proxy="$PROXY" || die "tsh login failed"
+fi
+exec bash -c "$cmd"

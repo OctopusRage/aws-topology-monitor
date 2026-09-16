@@ -92,6 +92,34 @@ admin / admin123    ← change after first login
 Auth endpoints: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`;
 admin: `GET/POST /api/users`, `DELETE /api/users/:id`.
 
+### `elbjump` — ELB → target group → instance → SSH
+
+`scripts/elbjump` is a tshjump-style picker built on the API below: choose a
+load balancer, then one of its target groups, then an instance, and it SSHes in
+through the Teleport bastion. Needs `curl`, `jq`, `tsh`, and `fzf` (falls back
+to a numbered menu without fzf).
+
+**Install** (prompts for the API key, your Teleport login and SSH user, and
+verifies the key against the server before writing `~/.config/elbjump/.env`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OctopusRage/aws-topology-monitor/master/scripts/install-elbjump.sh | bash
+```
+
+Non-interactive: `ELBJUMP_API_KEY=… ELBJUMP_BASTION=me@awsjumpid.qiscus.io bash install-elbjump.sh`.
+
+```bash
+elbjump                                   # interactive, 3 pickers
+elbjump qismo-stable                      # skip the ELB picker
+elbjump qismo-stable qismo-api-longtimeout            # pick only the instance
+elbjump qismo-stable qismo-api-longtimeout 10.30.1.5  # straight in (ip, name or id)
+elbjump list [ELB]                        # print ELBs, or one ELB's TGs + IPs
+elbjump --print … / --ip …                # show the ssh command / just the IP
+```
+
+Config keys in `~/.config/elbjump/.env`: `URL`, `API_KEY`, `SSH_USER`,
+`BASTION` (empty = plain ssh), `USE_PUBLIC_IP=true`, `HEALTHY_ONLY=true`.
+
 ### Script access: ELB → target group → instance IPs
 
 `GET /api/elb/targets` returns every load balancer with its target groups and the
@@ -109,6 +137,10 @@ The key has plain `user` (read-only) rights. A normal session token works too.
 | `health=healthy` | only targets in that health state (`healthy`, `unhealthy`, `draining`, …) |
 | `format=text` | one IP per line instead of JSON |
 | `ip=public` | with `format=text`, print public IPs (default: private) |
+
+Two-step flow for pickers: `GET /api/elbs` lists the load balancers, then
+`GET /api/elb/targets?lb=<name>` returns that one ELB's target groups and
+instances (only that ELB is described on AWS).
 
 ```bash
 # JSON tree of everything
