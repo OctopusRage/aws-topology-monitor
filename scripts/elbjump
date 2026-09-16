@@ -3,10 +3,10 @@
 # and SSH into it (through the Teleport bastion, like tshjump).
 #
 #   elbjump                      interactive: ELB/saved view → target group → instance
-#   elbjump SRC                  skip the first picker (SRC = ELB name or saved-view name)
+#   elbjump SRC                  skip the first picker (SRC = ELB, saved view or instance group)
 #   elbjump SRC TG               skip source + target-group pickers
 #   elbjump SRC TG IP|NAME|ID    no pickers — connect straight away
-#   elbjump list                 print every ELB and saved view
+#   elbjump list                 print every ELB, saved view and instance group
 #   elbjump list SRC             print a source's target groups + instances
 #   elbjump --print ...          print the ssh command instead of running it
 #   elbjump --ip ...             print only the chosen instance's IP
@@ -80,19 +80,22 @@ sources() { [[ -n "$SOURCES" ]] || SOURCES="$(api /api/sources)"; printf '%s' "$
 sources_tsv() {   # key <TAB> display…   key = elb:<arn> | view:<id>
   sources | jq -r '
     (.loadBalancers[] | ["elb:\(.arn)", .name, .scheme, .type, .state]),
-    (.views[]         | ["view:\(.id)", "★ \(.name)", "view on \(.baseLbName // "?")", "by \(.createdByName // "?")", ""])
+    (.views[]         | ["view:\(.id)", "★ \(.name)", "view on \(.baseLbName // "?")", "by \(.createdByName // "?")", ""]),
+    (.instanceGroups[] | ["ig:\(.viewId)/\(.id)", "◆ \(.name)", "\(.count) instances", "in \(.viewName)", ""])
     | @tsv'
 }
 
-# resolve NAME → key (elb:<arn> | view:<id>). ELB names win over view names.
+# resolve NAME → key (elb:<arn> | view:<id> | ig:<viewId>/<groupId>).
+# Precedence on a name clash: load balancer, then saved view, then instance group.
 resolve_key() {
   local n="$1" k
-  [[ "$n" == elb:* || "$n" == view:* ]] && { echo "$n"; return; }
+  [[ "$n" == elb:* || "$n" == view:* || "$n" == ig:* ]] && { echo "$n"; return; }
   k="$(sources | jq -r --arg n "$n" '
     (.loadBalancers[] | select(.name==$n or .arn==$n) | "elb:\(.arn)"),
-    (.views[] | select(.name==$n or (.id|tostring)==$n or (.name|ascii_downcase)==($n|ascii_downcase)) | "view:\(.id)")
+    (.views[] | select(.name==$n or (.id|tostring)==$n or (.name|ascii_downcase)==($n|ascii_downcase)) | "view:\(.id)"),
+    (.instanceGroups[] | select(.name==$n or .id==$n or (.name|ascii_downcase)==($n|ascii_downcase)) | "ig:\(.viewId)/\(.id)")
     | .' | head -1)"
-  [[ -n "$k" ]] || die "'$n' is neither a load balancer nor a saved view (try: elbjump list)"
+  [[ -n "$k" ]] || die "'$n' is not a load balancer, saved view or instance group (try: elbjump list)"
   echo "$k"
 }
 
@@ -107,13 +110,17 @@ source_json() {
     view:*)
       body="$(api "/api/views/$(urlenc "${key#view:}")/targets")" || exit 1
       jq '. + {name: ("★ " + .view.name)}' <<<"$body" ;;
+    ig:*)
+      local ref="${key#ig:}"
+      body="$(api "/api/instance-groups?view=$(urlenc "${ref%%/*}")&group=$(urlenc "${ref#*/}")")" || exit 1
+      jq '.instanceGroups[0] | {name: ("◆ " + .name), viewName, targetGroups: [.]}' <<<"$body" ;;
     *) die "bad source key $key" ;;
   esac
 }
 
 tgs_tsv() {       # from source json: arn <TAB> name  proto:port|kind  healthy/total
   jq -r '.targetGroups[] | [.arn, .name,
-        (if .kind=="instance-group" then "instances" else "\(.protocol):\(.port)" end),
+        (if .kind=="instance-group" then "instances" elif .protocol then "\(.protocol):\(.port)" else "-" end),
         (if .kind=="instance-group"
            then "\([.targets[]|select(.health=="running")]|length)/\(.targets|length) running"
            else "\([.targets[]|select(.health=="healthy")]|length)/\(.targets|length) healthy" end),
@@ -140,8 +147,9 @@ done
 if [[ "${1:-}" == list || "${1:-}" == ls ]]; then
   if [[ -n "${2:-}" ]]; then
     lb="$(source_json "$(resolve_key "$2")")"
-    jq -r '"\(.name)  (\(.loadBalancer.scheme // .scheme // "-"), \(.loadBalancer.dnsName // .dnsName // "-"))"' <<<"$lb"
-    jq -r '.targetGroups[] | "  \(.name)  \(if .kind=="instance-group" then "instances" else "\(.protocol):\(.port)" end)\(if .error then "  ⚠ \(.error)" elif .kind=="standalone" then "  (added)" else "" end)",
+    jq -r 'if .viewName and (.targetGroups|length)==1 then "\(.name)  (instance group in \(.viewName))"
+           else "\(.name)  (\(.loadBalancer.scheme // .scheme // "-"), \(.loadBalancer.dnsName // .dnsName // "-"))" end' <<<"$lb"
+    jq -r '.targetGroups[] | "  \(.name)  \(if .kind=="instance-group" then "instances" elif .protocol then "\(.protocol):\(.port)" else "-" end)\(if .error then "  ⚠ \(.error)" elif .kind=="standalone" then "  (added)" else "" end)",
            (.targets[] | "      \(.name)\t\(.id)\t\(.privateIp // "-")\t\(.publicIp // "-")\t\(.health)")' <<<"$lb" | column -t -s $'\t'
   else
     sources_tsv | cut -f2- | column -t -s $'\t'
@@ -167,8 +175,15 @@ if [[ -z "$tg_name" ]]; then
   [[ -n "$tg_arn" ]] || { echo cancelled >&2; exit 130; }
   tg="$(jq -e --arg a "$tg_arn" '.targetGroups[] | select(.arn==$a)' <<<"$lb")"
 else
-  tg="$(jq -e --arg n "$tg_name" '.targetGroups[] | select(.name==$n or .arn==$n)' <<<"$lb")" \
-    || die "target group '$tg_name' not found in $lb_name"
+  if ! tg="$(jq -e --arg n "$tg_name" '.targetGroups[] | select(.name==$n or .arn==$n)' <<<"$lb")"; then
+    # A single-group source (instance group): let "elbjump GROUP INSTANCE" work
+    # by treating the 2nd arg as the instance selector.
+    if [[ -z "${3:-}" && "$(jq '.targetGroups|length' <<<"$lb")" == 1 ]]; then
+      tg="$(jq '.targetGroups[0]' <<<"$lb")"; set -- "$1" "$(jq -r .name <<<"$tg")" "$tg_name"
+    else
+      die "target group '$tg_name' not found in $lb_name"
+    fi
+  fi
 fi
 tg_name="$(jq -r .name <<<"$tg")"
 

@@ -116,6 +116,7 @@ elbjump qismo-stable                      # skip the ELB picker
 elbjump qismo-stable qismo-api-longtimeout            # pick only the instance
 elbjump qismo-stable qismo-api-longtimeout 10.30.1.5  # straight in (ip, name or id)
 elbjump "Prod overview"                   # a saved view works like an ELB (★ in the picker)
+elbjump worker                            # an instance group (◆) goes straight to its instances
 elbjump list [ELB|VIEW]                   # print ELBs + views, or one source's TGs + IPs
 elbjump --print … / --ip …                # show the ssh command / just the IP
 ```
@@ -147,6 +148,9 @@ saved views** visible to the caller (admin-authored ones for the API key), then
 or `GET /api/views/<id or name>/targets` resolves a saved view live into the
 same shape: its base ELB's target groups, standalone target groups added to the
 view (`kind: standalone`), and its instance groups (`kind: instance-group`).
+`GET /api/instance-groups[?view=…&group=…]` lists the instance groups of all
+visible views directly, with live EC2 data; `/api/sources` includes a summary
+of them so a picker can offer them at the top level.
 
 ```bash
 # JSON tree of everything

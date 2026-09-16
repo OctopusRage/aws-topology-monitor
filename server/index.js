@@ -293,10 +293,80 @@ app.get('/api/sources', requireAuth, async (req, res) => {
       Promise.resolve(viewStore.listViews(req.user)),
     ]);
     const lbName = new Map(loadBalancers.map((l) => [l.arn, l.name]));
+    const instanceGroups = [];
+    for (const summary of views) {
+      const v = viewStore.getView(summary.id);
+      for (const g of v?.data?.instanceGroups || [])
+        instanceGroups.push({ id: g.id, name: g.name, count: (g.instances || []).length, viewId: v.id, viewName: v.name });
+    }
     res.json({
       loadBalancers,
       views: views.map((v) => ({ ...v, baseLbName: lbName.get(v.baseLbArn) || null })),
+      instanceGroups,
     });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// A saved view's instance group (EC2 workers not behind any target group),
+// refreshed from EC2, in the same shape as a target group.
+async function resolveInstanceGroup(v, g) {
+  const saved = g.instances || [];
+  let live = [];
+  try {
+    live = await provider.getInstances(saved.map((i) => i.id));
+  } catch {
+    live = []; // fall back to the IPs stored when the group was saved
+  }
+  return {
+    arn: `view:${v.id}/instance-group/${g.id}`,
+    id: g.id,
+    name: g.name,
+    kind: 'instance-group',
+    viewId: v.id,
+    viewName: v.name,
+    protocol: null,
+    port: null,
+    targets: saved.map((i, idx) => {
+      const l = live[idx] || {};
+      return {
+        id: i.id,
+        name: l.name || i.name || i.id,
+        port: null,
+        health: l.state || i.state || null,
+        state: l.state || i.state || null,
+        az: l.az || i.az || null,
+        privateIp: l.privateIp || i.privateIp || null,
+        publicIp: l.publicIp ?? null,
+        instanceType: l.instanceType || l.type || i.type || null,
+      };
+    }),
+  };
+}
+
+// All instance groups across the saved views visible to the caller, live.
+//   ?view=<id|name>   only groups of that view
+//   ?group=<id|name>  only that group (name match is case-insensitive)
+app.get('/api/instance-groups', requireAuth, async (req, res) => {
+  const { view, group } = req.query;
+  try {
+    let views = viewStore.listViews(req.user);
+    if (view) {
+      const v = viewStore.findView(view, req.user);
+      if (!v) return res.status(404).json({ error: 'view not found' });
+      views = [v];
+    }
+    const out = [];
+    for (const summary of views) {
+      const v = summary.data ? summary : viewStore.getView(summary.id);
+      for (const g of v?.data?.instanceGroups || []) {
+        if (group && !(g.id === group || String(g.name).toLowerCase() === String(group).toLowerCase())) continue;
+        out.push(await resolveInstanceGroup(v, g));
+      }
+    }
+    if (group && out.length === 0) return res.status(404).json({ error: 'instance group not found' });
+    res.json({ instanceGroups: out });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -329,36 +399,7 @@ app.get('/api/views/:ref/targets', requireAuth, async (req, res) => {
       else targetGroups.push({ arn: s.tgArn, name: s.name, kind: 'standalone', targets: [], error });
     }
 
-    for (const g of v.data?.instanceGroups || []) {
-      const saved = g.instances || [];
-      let live = [];
-      try {
-        live = await provider.getInstances(saved.map((i) => i.id));
-      } catch {
-        live = []; // fall back to the IPs stored when the group was saved
-      }
-      targetGroups.push({
-        arn: `view:${v.id}/instance-group/${g.id}`,
-        name: g.name,
-        kind: 'instance-group',
-        protocol: null,
-        port: null,
-        targets: saved.map((i, idx) => {
-          const l = live[idx] || {};
-          return {
-            id: i.id,
-            name: l.name || i.name || i.id,
-            port: null,
-            health: l.state || i.state || null,
-            state: l.state || i.state || null,
-            az: l.az || i.az || null,
-            privateIp: l.privateIp || i.privateIp || null,
-            publicIp: l.publicIp ?? null,
-            instanceType: l.instanceType || l.type || i.type || null,
-          };
-        }),
-      });
-    }
+    for (const g of v.data?.instanceGroups || []) targetGroups.push(await resolveInstanceGroup(v, g));
 
     res.json({
       view: { id: v.id, name: v.name, baseLbArn: v.baseLbArn, baseLbName: base?.name || null, updatedAt: v.updatedAt },
