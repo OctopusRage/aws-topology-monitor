@@ -73,7 +73,7 @@ while [[ -z "$API_KEY" ]]; do
 done
 
 # Verify the key before writing anything.
-code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $API_KEY" "$URL/api/elbs" || echo 000)"
+code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $API_KEY" "$URL/api/elbs" || true)"
 case "$code" in
   200) grn "  ✓ API key accepted by $URL" ;;
   401) die "API key rejected by $URL (HTTP 401) — check the key and try again" ;;
