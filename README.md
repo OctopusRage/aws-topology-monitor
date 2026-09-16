@@ -99,8 +99,10 @@ load balancer, then one of its target groups, then an instance, and it SSHes in
 through the Teleport bastion. Needs `curl`, `jq`, `tsh`, and `fzf` (falls back
 to a numbered menu without fzf).
 
-**Install** (prompts for the API key, your Teleport login and SSH user, and
-verifies the key against the server before writing `~/.config/elbjump/.env`):
+**Install** — requires `tsh` (Teleport CLI) to be installed first; the
+installer aborts with install instructions if it isn't. It then prompts for the
+API key, your Teleport login and SSH user, and verifies the key against the
+server before writing `~/.config/elbjump/.env`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OctopusRage/aws-topology-monitor/master/scripts/install-elbjump.sh | bash

@@ -44,7 +44,23 @@ missing=()
 for t in curl jq; do command -v "$t" >/dev/null 2>&1 || missing+=("$t"); done
 [[ ${#missing[@]} -eq 0 ]] || die "missing required tools: ${missing[*]} — install them and re-run"
 command -v fzf >/dev/null 2>&1 || echo "  note: fzf not found — elbjump will use a numbered menu (install fzf for fuzzy pickers)"
-command -v tsh >/dev/null 2>&1 || echo "  note: tsh (Teleport) not found — needed to reach instances through the bastion"
+
+# tsh (Teleport CLI) is required: every ssh goes through the Teleport bastion.
+if command -v tsh >/dev/null 2>&1; then
+  tsh_ver="$(tsh version 2>/dev/null | sed -n 's/^Teleport v\{0,1\}\([^ ]*\).*/\1/p' | head -1)"
+  grn "  ✓ tsh found: $(command -v tsh)${tsh_ver:+ (Teleport $tsh_ver)}"
+  if tsh status >/dev/null 2>&1; then
+    grn "  ✓ tsh is logged in as $(tsh status 2>/dev/null | sed -n 's/^ *Logged in as: *//p' | head -1)"
+  else
+    echo "  note: tsh is not logged in — elbjump will run 'tsh login --proxy=teleport.qiscus.io' on first use"
+  fi
+else
+  red "  ✗ tsh (Teleport CLI) is not installed — it is required to reach instances through the bastion."
+  red "    Install it, then re-run this installer:"
+  red "      macOS:  brew install teleport"
+  red "      Linux:  curl https://cdn.teleport.dev/install.sh | bash   (or see https://goteleport.com/docs/installation/)"
+  exit 1
+fi
 
 # ---- settings ----------------------------------------------------------------
 URL="${ELBJUMP_URL:-$DEFAULT_URL}"

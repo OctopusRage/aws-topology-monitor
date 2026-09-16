@@ -38,6 +38,8 @@ cyan() { printf '\033[36m%s\033[0m\n' "$*" >&2; }
 die()  { red "$*"; exit 1; }
 
 for t in curl jq; do command -v "$t" >/dev/null 2>&1 || die "$t not found in PATH"; done
+[[ -z "$BASTION" ]] || command -v tsh >/dev/null 2>&1 \
+  || die "tsh (Teleport CLI) not found — required to reach instances via $BASTION. Install: https://goteleport.com/docs/installation/"
 [[ -n "$URL" ]] || die "URL not set — create $CONF with URL=… and API_KEY=…"
 [[ -n "$API_KEY" ]] || die "API_KEY not set in $CONF"
 URL="${URL%/}"
