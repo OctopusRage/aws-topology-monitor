@@ -284,6 +284,81 @@ app.get('/api/elb/targets', requireAuth, async (req, res) => {
   }
 });
 
+// Everything a jump picker can start from: load balancers + saved views.
+// (Saved views visible to the caller: admin-authored ones for non-admins.)
+app.get('/api/sources', requireAuth, async (req, res) => {
+  try {
+    const [loadBalancers, views] = await Promise.all([
+      provider.listLoadBalancers(),
+      Promise.resolve(viewStore.listViews(req.user)),
+    ]);
+    const lbName = new Map(loadBalancers.map((l) => [l.arn, l.name]));
+    res.json({
+      loadBalancers,
+      views: views.map((v) => ({ ...v, baseLbName: lbName.get(v.baseLbArn) || null })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// A saved view resolved LIVE into the same shape as /api/elb/targets: its
+// base ELB's target groups, any standalone target groups added to the view,
+// and its instance groups — each as a "target group" with targets + IPs.
+// :ref is the view id or its name.
+app.get('/api/views/:ref/targets', requireAuth, async (req, res) => {
+  const v = viewStore.findView(req.params.ref, req.user);
+  if (!v) return res.status(404).json({ error: 'view not found' });
+  try {
+    const targetGroups = [];
+    const lbs = await provider.listElbTargets(v.baseLbArn);
+    const base = lbs[0] || null;
+    for (const tg of base?.targetGroups || []) targetGroups.push({ ...tg, kind: 'elb', via: base.name });
+
+    for (const s of v.data?.standaloneTargetGroups || []) {
+      if (targetGroups.some((t) => t.arn === s.tgArn)) continue;
+      const tg = await provider.getStandaloneTargetGroup(s.tgArn);
+      if (tg) targetGroups.push({ ...tg, kind: 'standalone' });
+      else targetGroups.push({ arn: s.tgArn, name: s.name, kind: 'standalone', targets: [], error: 'target group not found' });
+    }
+
+    for (const g of v.data?.instanceGroups || []) {
+      const saved = g.instances || [];
+      const live = await provider.getInstances(saved.map((i) => i.id));
+      targetGroups.push({
+        arn: `view:${v.id}/instance-group/${g.id}`,
+        name: g.name,
+        kind: 'instance-group',
+        protocol: null,
+        port: null,
+        targets: saved.map((i, idx) => {
+          const l = live[idx] || {};
+          return {
+            id: i.id,
+            name: l.name || i.name || i.id,
+            port: null,
+            health: l.state || i.state || null,
+            state: l.state || i.state || null,
+            az: l.az || i.az || null,
+            privateIp: l.privateIp || i.privateIp || null,
+            publicIp: l.publicIp ?? null,
+            instanceType: l.instanceType || l.type || i.type || null,
+          };
+        }),
+      });
+    }
+
+    res.json({
+      view: { id: v.id, name: v.name, baseLbArn: v.baseLbArn, baseLbName: base?.name || null, updatedAt: v.updatedAt },
+      name: v.name,
+      loadBalancer: base ? { arn: base.arn, name: base.name, dnsName: base.dnsName, scheme: base.scheme } : null,
+      targetGroups,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 // Listener rules for a load balancer (shown when the ELB node is clicked).
 app.get('/api/elb/rules', requireAuth, async (req, res) => {
   const lbArn = req.query.lbArn;

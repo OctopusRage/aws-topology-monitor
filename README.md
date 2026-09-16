@@ -115,7 +115,8 @@ elbjump                                   # interactive, 3 pickers
 elbjump qismo-stable                      # skip the ELB picker
 elbjump qismo-stable qismo-api-longtimeout            # pick only the instance
 elbjump qismo-stable qismo-api-longtimeout 10.30.1.5  # straight in (ip, name or id)
-elbjump list [ELB]                        # print ELBs, or one ELB's TGs + IPs
+elbjump "Prod overview"                   # a saved view works like an ELB (★ in the picker)
+elbjump list [ELB|VIEW]                   # print ELBs + views, or one source's TGs + IPs
 elbjump --print … / --ip …                # show the ssh command / just the IP
 ```
 
@@ -140,9 +141,12 @@ The key has plain `user` (read-only) rights. A normal session token works too.
 | `format=text` | one IP per line instead of JSON |
 | `ip=public` | with `format=text`, print public IPs (default: private) |
 
-Two-step flow for pickers: `GET /api/elbs` lists the load balancers, then
-`GET /api/elb/targets?lb=<name>` returns that one ELB's target groups and
-instances (only that ELB is described on AWS).
+Two-step flow for pickers: `GET /api/sources` lists the load balancers **and the
+saved views** visible to the caller (admin-authored ones for the API key), then
+`GET /api/elb/targets?lb=<name>` returns one ELB's target groups and instances,
+or `GET /api/views/<id or name>/targets` resolves a saved view live into the
+same shape: its base ELB's target groups, standalone target groups added to the
+view (`kind: standalone`), and its instance groups (`kind: instance-group`).
 
 ```bash
 # JSON tree of everything

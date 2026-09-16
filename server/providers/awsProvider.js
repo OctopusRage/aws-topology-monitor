@@ -370,6 +370,12 @@ export const awsProvider = {
     });
   },
 
+  // Live metadata for specific instance ids (saved instance groups).
+  async getInstances(ids) {
+    const meta = await describeInstances(ids);
+    return ids.map((id) => ({ id, ...(meta.get(id) || {}) }));
+  },
+
   // Every load balancer → target groups → registered instances (with IPs).
   // Fans out one DescribeTargetHealth per target group, then resolves ALL
   // instance ids in one batched DescribeInstances instead of one per group.

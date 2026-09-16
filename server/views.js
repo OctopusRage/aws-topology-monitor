@@ -57,6 +57,16 @@ export function getView(id) {
   return v;
 }
 
+// Resolve "<id>" or a view name (case-insensitive; newest wins) to a full
+// view, honouring the same visibility rule as listViews.
+export function findView(ref, user) {
+  const visible = listViews(user);
+  const key = String(ref || '').trim();
+  let hit = /^\d+$/.test(key) ? visible.find((v) => v.id === Number(key)) : null;
+  if (!hit) hit = visible.find((v) => v.name.toLowerCase() === key.toLowerCase());
+  return hit ? getView(hit.id) : null;
+}
+
 export function createView(user, { name, baseLbArn, data }) {
   if (!String(name || '').trim()) throw new Error('name is required');
   if (!baseLbArn) throw new Error('baseLbArn is required');

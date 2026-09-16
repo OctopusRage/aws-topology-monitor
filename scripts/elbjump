@@ -2,12 +2,12 @@
 # elbjump — pick an ELB → target group → instance from aws-topology-monitor
 # and SSH into it (through the Teleport bastion, like tshjump).
 #
-#   elbjump                      interactive: ELB → target group → instance
-#   elbjump ELB                  skip the ELB picker
-#   elbjump ELB TG               skip ELB + target-group pickers
-#   elbjump ELB TG IP|NAME|ID    no pickers — connect straight away
-#   elbjump list                 print every ELB
-#   elbjump list ELB             print ELB's target groups + instances
+#   elbjump                      interactive: ELB/saved view → target group → instance
+#   elbjump SRC                  skip the first picker (SRC = ELB name or saved-view name)
+#   elbjump SRC TG               skip source + target-group pickers
+#   elbjump SRC TG IP|NAME|ID    no pickers — connect straight away
+#   elbjump list                 print every ELB and saved view
+#   elbjump list SRC             print a source's target groups + instances
 #   elbjump --print ...          print the ssh command instead of running it
 #   elbjump --ip ...             print only the chosen instance's IP
 #
@@ -74,19 +74,50 @@ pick() {
   fi
 }
 
-elbs_tsv() {      # arn <TAB> name  scheme  type  state
-  api /api/elbs | jq -r '.[] | [.arn, .name, .scheme, .type, .state] | @tsv'
+SOURCES=""        # cached GET /api/sources (load balancers + saved views)
+sources() { [[ -n "$SOURCES" ]] || SOURCES="$(api /api/sources)"; printf '%s' "$SOURCES"; }
+
+sources_tsv() {   # key <TAB> display…   key = elb:<arn> | view:<id>
+  sources | jq -r '
+    (.loadBalancers[] | ["elb:\(.arn)", .name, .scheme, .type, .state]),
+    (.views[]         | ["view:\(.id)", "★ \(.name)", "view on \(.baseLbName // "?")", "by \(.createdByName // "?")", ""])
+    | @tsv'
 }
 
-lb_json() {       # full LB object with targetGroups[].targets[]
-  local body; body="$(api "/api/elb/targets?lb=$(urlenc "$1")")" || exit 1
-  jq -e '.loadBalancers[0]' <<<"$body" >/dev/null || die "load balancer '$1' not found"
-  jq '.loadBalancers[0]' <<<"$body"
+# resolve NAME → key (elb:<arn> | view:<id>). ELB names win over view names.
+resolve_key() {
+  local n="$1" k
+  [[ "$n" == elb:* || "$n" == view:* ]] && { echo "$n"; return; }
+  k="$(sources | jq -r --arg n "$n" '
+    (.loadBalancers[] | select(.name==$n or .arn==$n) | "elb:\(.arn)"),
+    (.views[] | select(.name==$n or (.id|tostring)==$n or (.name|ascii_downcase)==($n|ascii_downcase)) | "view:\(.id)")
+    | .' | head -1)"
+  [[ -n "$k" ]] || die "'$n' is neither a load balancer nor a saved view (try: elbjump list)"
+  echo "$k"
 }
 
-tgs_tsv() {       # from lb json: arn <TAB> name  port  healthy/total
-  jq -r '.targetGroups[] | [.arn, .name, "\(.protocol):\(.port)",
-        "\([.targets[]|select(.health=="healthy")]|length)/\(.targets|length) healthy"] | @tsv' <<<"$1"
+# source_json KEY → object with .name and .targetGroups[].targets[]
+source_json() {
+  local key="$1" body
+  case "$key" in
+    elb:*)
+      body="$(api "/api/elb/targets?lb=$(urlenc "${key#elb:}")")" || exit 1
+      jq -e '.loadBalancers[0]' <<<"$body" >/dev/null || die "load balancer not found: ${key#elb:}"
+      jq '.loadBalancers[0]' <<<"$body" ;;
+    view:*)
+      body="$(api "/api/views/$(urlenc "${key#view:}")/targets")" || exit 1
+      jq '. + {name: ("★ " + .view.name)}' <<<"$body" ;;
+    *) die "bad source key $key" ;;
+  esac
+}
+
+tgs_tsv() {       # from source json: arn <TAB> name  proto:port|kind  healthy/total
+  jq -r '.targetGroups[] | [.arn, .name,
+        (if .kind=="instance-group" then "instances" else "\(.protocol):\(.port)" end),
+        (if .kind=="instance-group"
+           then "\([.targets[]|select(.health=="running")]|length)/\(.targets|length) running"
+           else "\([.targets[]|select(.health=="healthy")]|length)/\(.targets|length) healthy" end),
+        (if .kind=="standalone" then "(added)" else "" end)] | @tsv' <<<"$1"
 }
 
 targets_tsv() {   # from tg json: id <TAB> name  privateIp  publicIp  health  az  type
@@ -108,24 +139,25 @@ done
 
 if [[ "${1:-}" == list || "${1:-}" == ls ]]; then
   if [[ -n "${2:-}" ]]; then
-    lb="$(lb_json "$2")"
-    jq -r '"\(.name)  (\(.scheme), \(.dnsName))"' <<<"$lb"
-    jq -r '.targetGroups[] | "  \(.name)  \(.protocol):\(.port)",
+    lb="$(source_json "$(resolve_key "$2")")"
+    jq -r '"\(.name)  (\(.loadBalancer.scheme // .scheme // "-"), \(.loadBalancer.dnsName // .dnsName // "-"))"' <<<"$lb"
+    jq -r '.targetGroups[] | "  \(.name)  \(if .kind=="instance-group" then "instances" else "\(.protocol):\(.port)" end)\(if .kind=="standalone" then "  (added)" else "" end)",
            (.targets[] | "      \(.name)\t\(.id)\t\(.privateIp // "-")\t\(.publicIp // "-")\t\(.health)")' <<<"$lb" | column -t -s $'\t'
   else
-    elbs_tsv | cut -f2- | column -t
+    sources_tsv | cut -f2- | column -t -s $'\t'
   fi
   exit 0
 fi
 
-# ---- step 1: ELB -------------------------------------------------------------
+# ---- step 1: ELB or saved view ----------------------------------------------
 lb_name="${1:-}"
 if [[ -z "$lb_name" ]]; then
-  lb_arn="$(elbs_tsv | pick elb 'pick a load balancer')"
-  [[ -n "$lb_arn" ]] || { echo cancelled >&2; exit 130; }
-  lb_name="$lb_arn"
+  key="$(sources_tsv | pick elb 'pick a load balancer or a ★ saved view')"
+  [[ -n "$key" ]] || { echo cancelled >&2; exit 130; }
+else
+  key="$(resolve_key "$lb_name")"
 fi
-lb="$(lb_json "$lb_name")"
+lb="$(source_json "$key")"
 lb_name="$(jq -r .name <<<"$lb")"
 
 # ---- step 2: target group ----------------------------------------------------

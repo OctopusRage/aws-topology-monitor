@@ -211,6 +211,11 @@ export const mockProvider = {
     return null;
   },
 
+  async getInstances(ids) {
+    const all = await this.listEc2Instances();
+    return ids.map((id) => all.find((i) => i.id === id) || { id });
+  },
+
   // Every load balancer → target groups → registered instances (with IPs).
   async listElbTargets(lb) {
     return LOAD_BALANCERS.filter((l) => !lb || l.name === lb || l.arn === lb).map((lb) => ({
