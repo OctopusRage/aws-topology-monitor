@@ -24,6 +24,8 @@ services:
       USE_CLOUDWATCH_REQUESTS: ${USE_CLOUDWATCH_REQUESTS:-false}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      # Optional static key for scripts (GET /api/elb/targets etc.)
+      API_KEY: ${API_KEY:-}
     volumes:
       - data:/app/data
       # Optional: use your local AWS profile instead of the keys above

@@ -10,7 +10,9 @@ import { makeAuthMiddleware } from './auth.js';
 import * as users from './users.js'; // also triggers db init + admin seed
 import * as viewStore from './views.js';
 
-const { requireAuth, requireAdmin } = makeAuthMiddleware(users.getUserByToken);
+const { requireAuth, requireAdmin } = makeAuthMiddleware(users.getUserByToken, {
+  apiKey: config.apiKey,
+});
 
 // Pick the data source. AWS provider is imported lazily so the app boots even
 // without the AWS SDK installed / credentials configured when USE_AWS=false.
@@ -235,6 +237,49 @@ app.post('/api/metrics/datapoint', requireAuth, async (req, res) => {
 app.get('/api/elbs', requireAuth, async (_req, res) => {
   try {
     res.json(await provider.listLoadBalancers());
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Every ELB → its target groups → registered instances with IPs. Built for
+// scripts (e.g. "give me the IPs behind target group X so I can SSH in").
+//   ?lb=<name|arn>       only this load balancer
+//   ?tg=<name|arn>       only this target group
+//   ?health=healthy      only targets in this health state
+//   ?format=text         one IP per line instead of JSON (for shell loops)
+//   ?ip=public|private   which IP the text format prints (default private)
+app.get('/api/elb/targets', requireAuth, async (req, res) => {
+  const { lb, tg, health, format, ip: ipKind } = req.query;
+  try {
+    let lbs = await provider.listElbTargets();
+    if (lb) lbs = lbs.filter((l) => l.name === lb || l.arn === lb);
+    if (tg) {
+      lbs = lbs
+        .map((l) => ({ ...l, targetGroups: l.targetGroups.filter((t) => t.name === tg || t.arn === tg) }))
+        .filter((l) => l.targetGroups.length > 0);
+    }
+    if (health) {
+      lbs = lbs.map((l) => ({
+        ...l,
+        targetGroups: l.targetGroups.map((t) => ({
+          ...t,
+          targets: t.targets.filter((x) => x.health === health),
+        })),
+      }));
+    }
+    if ((lb || tg) && lbs.length === 0)
+      return res.status(404).json({ error: 'no matching load balancer / target group' });
+
+    if (format === 'text') {
+      const key = ipKind === 'public' ? 'publicIp' : 'privateIp';
+      const ips = new Set();
+      for (const l of lbs)
+        for (const t of l.targetGroups)
+          for (const x of t.targets) if (x[key]) ips.add(x[key]);
+      return res.type('text/plain').send([...ips].join('\n') + (ips.size ? '\n' : ''));
+    }
+    res.json({ region: config.awsRegion, loadBalancers: lbs });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }

@@ -92,6 +92,35 @@ admin / admin123    ← change after first login
 Auth endpoints: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`;
 admin: `GET/POST /api/users`, `DELETE /api/users/:id`.
 
+### Script access: ELB → target group → instance IPs
+
+`GET /api/elb/targets` returns every load balancer with its target groups and the
+registered instances (id, name, health, AZ, **privateIp**, **publicIp**). It's meant
+for scripts — e.g. grab the IPs behind a target group and SSH into them.
+
+Set `API_KEY` in `server/.env` (`openssl rand -hex 32`) and send it as
+`X-API-Key: <key>` or `Authorization: Bearer <key>`; no login session needed.
+The key has plain `user` (read-only) rights. A normal session token works too.
+
+| Query | Effect |
+|-------|--------|
+| `lb=<name or ARN>` | only that load balancer |
+| `tg=<name or ARN>` | only that target group |
+| `health=healthy` | only targets in that health state (`healthy`, `unhealthy`, `draining`, …) |
+| `format=text` | one IP per line instead of JSON |
+| `ip=public` | with `format=text`, print public IPs (default: private) |
+
+```bash
+# JSON tree of everything
+curl -s -H "X-API-Key: $KEY" https://host/api/elb/targets | jq
+
+# SSH into every healthy instance behind one target group
+for ip in $(curl -s -H "X-API-Key: $KEY" \
+    "https://host/api/elb/targets?tg=api-gateway&health=healthy&format=text"); do
+  ssh ec2-user@"$ip" uptime
+done
+```
+
 ## Go live
 
 Edit `server/.env` (copy from `.env.example`):
@@ -99,6 +128,7 @@ Edit `server/.env` (copy from `.env.example`):
 | Var | What it does |
 |-----|--------------|
 | `USE_AWS=true` | Read real ELBs/target groups/instances via AWS SDK v3. Uses the standard credential chain (env keys, profile, or instance role). |
+| `API_KEY=…` | Static key for scripts to call the API (e.g. `/api/elb/targets`) without a login session. Unset = disabled. |
 | `AWS_REGION` | Region to query. |
 | `MOCK_METRICS=false` | Query Prometheus for real instead of synthesizing series. |
 | `PROMETHEUS_URL` | Prometheus that scrapes your `node_exporter`s. |
@@ -125,7 +155,7 @@ server/                 Express API (ESM, node fetch)
     mockProvider.js     demo topology
     awsProvider.js      live AWS SDK v3 (elbv2 + ec2) — same shape as mock
   prometheus.js         PromQL queries + mock/fallback series
-  index.js              /api/elbs, /api/topology, /api/metrics/target-group
+  index.js              /api/elbs, /api/elb/targets, /api/topology, /api/metrics/target-group
 web/                    React + Vite
   layout.js             topology → React Flow nodes/edges (ELB→TG→servers)
   components/nodes.jsx   custom ELB / target-group / server nodes

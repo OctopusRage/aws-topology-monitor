@@ -23,6 +23,7 @@ function makeInstance(prefix, idx, azSuffix) {
     health: HEALTH[Math.floor(rand() * HEALTH.length)],
     az: `ap-southeast-1${azSuffix}`,
     privateIp: ip(prefix.length, octet),
+    publicIp: idx % 2 === 0 ? `54.169.${prefix.length}.${octet}` : null,
     instanceType: idx % 2 === 0 ? 't3.medium' : 't3.large',
   };
 }
@@ -208,6 +209,17 @@ export const mockProvider = {
       if (tg) return { ...tg, lbArn: lb.arn };
     }
     return null;
+  },
+
+  // Every load balancer → target groups → registered instances (with IPs).
+  async listElbTargets() {
+    return LOAD_BALANCERS.map((lb) => ({
+      ...lb,
+      targetGroups: lb.targetGroups.map(({ healthyThreshold, ...tg }) => ({
+        ...tg,
+        targets: tg.targets.map((t) => ({ ...t, state: 'running' })),
+      })),
+    }));
   },
 
   // Resolve a target group ARN to its member instances (used by metrics layer).

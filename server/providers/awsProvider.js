@@ -43,25 +43,49 @@ function mapLb(lb) {
   };
 }
 
-// Batch-resolve EC2 instance metadata (Name tag, private IP, AZ, type).
+// Batch-resolve EC2 instance metadata (Name tag, private/public IP, AZ, type).
+// Chunked so a big fleet doesn't exceed the InstanceIds request limit.
 async function describeInstances(instanceIds) {
   const meta = new Map();
-  if (instanceIds.length === 0) return meta;
-  const out = await ec2.send(
-    new DescribeInstancesCommand({ InstanceIds: instanceIds })
-  );
-  for (const res of out.Reservations || []) {
-    for (const inst of res.Instances || []) {
-      const nameTag = (inst.Tags || []).find((t) => t.Key === 'Name');
-      meta.set(inst.InstanceId, {
-        name: nameTag?.Value || inst.InstanceId,
-        privateIp: inst.PrivateIpAddress,
-        az: inst.Placement?.AvailabilityZone,
-        instanceType: inst.InstanceType,
-      });
+  const ids = [...new Set(instanceIds)];
+  for (let i = 0; i < ids.length; i += 100) {
+    const out = await ec2.send(
+      new DescribeInstancesCommand({ InstanceIds: ids.slice(i, i + 100) })
+    );
+    for (const res of out.Reservations || []) {
+      for (const inst of res.Instances || []) {
+        const nameTag = (inst.Tags || []).find((t) => t.Key === 'Name');
+        meta.set(inst.InstanceId, {
+          name: nameTag?.Value || inst.InstanceId,
+          privateIp: inst.PrivateIpAddress,
+          publicIp: inst.PublicIpAddress || null,
+          az: inst.Placement?.AvailabilityZone,
+          instanceType: inst.InstanceType,
+          state: inst.State?.Name,
+        });
+      }
     }
   }
   return meta;
+}
+
+// All target groups in the account (DescribeTargetGroups is paginated).
+async function allTargetGroups() {
+  const tgs = [];
+  let marker;
+  do {
+    const out = await elbv2.send(new DescribeTargetGroupsCommand({ Marker: marker }));
+    tgs.push(...(out.TargetGroups || []));
+    marker = out.NextMarker;
+  } while (marker);
+  return tgs;
+}
+
+// Raw target-health rows for a target group (instance-type targets only carry
+// an i-… id; IP/lambda targets are passed through with what ELB knows).
+async function targetHealth(tgArn) {
+  const out = await elbv2.send(new DescribeTargetHealthCommand({ TargetGroupArn: tgArn }));
+  return out.TargetHealthDescriptions || [];
 }
 
 async function targetGroupsForLb(lbArn) {
@@ -91,6 +115,7 @@ async function buildTargetGroup(tg) {
       health: d.TargetHealth?.State,
       az: m.az || d.Target?.AvailabilityZone,
       privateIp: m.privateIp,
+      publicIp: m.publicIp ?? null,
       instanceType: m.instanceType,
     };
   });
@@ -288,6 +313,7 @@ export const awsProvider = {
             type: inst.InstanceType,
             state: inst.State?.Name,
             privateIp: inst.PrivateIpAddress,
+            publicIp: inst.PublicIpAddress || null,
             az: inst.Placement?.AvailabilityZone,
           });
         }
@@ -338,8 +364,56 @@ export const awsProvider = {
         port: d.Target?.Port,
         health: d.TargetHealth?.State,
         privateIp: m.privateIp,
+        publicIp: m.publicIp ?? null,
         az: m.az,
       };
     });
+  },
+
+  // Every load balancer → target groups → registered instances (with IPs).
+  // Fans out one DescribeTargetHealth per target group, then resolves ALL
+  // instance ids in one batched DescribeInstances instead of one per group.
+  async listElbTargets() {
+    const [lbOut, tgs] = await Promise.all([
+      elbv2.send(new DescribeLoadBalancersCommand({})),
+      allTargetGroups(),
+    ]);
+    const healthByTg = new Map(
+      await Promise.all(tgs.map(async (tg) => [tg.TargetGroupArn, await targetHealth(tg.TargetGroupArn)]))
+    );
+    const instanceIds = [];
+    for (const rows of healthByTg.values())
+      for (const d of rows) if (d.Target?.Id?.startsWith('i-')) instanceIds.push(d.Target.Id);
+    const meta = await describeInstances(instanceIds);
+
+    const mapTg = (tg) => ({
+      arn: tg.TargetGroupArn,
+      name: tg.TargetGroupName,
+      protocol: tg.Protocol,
+      port: tg.Port,
+      targetType: tg.TargetType,
+      targets: (healthByTg.get(tg.TargetGroupArn) || []).map((d) => {
+        const id = d.Target?.Id;
+        const m = meta.get(id) || {};
+        return {
+          id,
+          name: m.name || id,
+          port: d.Target?.Port ?? tg.Port,
+          health: d.TargetHealth?.State,
+          state: m.state ?? null,
+          az: m.az || d.Target?.AvailabilityZone || null,
+          privateIp: m.privateIp ?? (tg.TargetType === 'ip' ? id : null),
+          publicIp: m.publicIp ?? null,
+          instanceType: m.instanceType ?? null,
+        };
+      }),
+    });
+
+    return (lbOut.LoadBalancers || []).map((lb) => ({
+      ...mapLb(lb),
+      targetGroups: tgs
+        .filter((tg) => (tg.LoadBalancerArns || []).includes(lb.LoadBalancerArn))
+        .map(mapTg),
+    }));
   },
 };

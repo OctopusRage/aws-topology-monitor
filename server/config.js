@@ -32,6 +32,11 @@ export const config = {
       String(process.env.USE_CLOUDWATCH_REQUESTS || 'false').toLowerCase() === 'true',
   },
 
+  // Optional static key for scripts / CLI access (e.g. fetching instance IPs
+  // to SSH into). Accepted as `Authorization: Bearer <key>` or `X-API-Key`
+  // on every authenticated endpoint. Unset = disabled (session login only).
+  apiKey: process.env.API_KEY || '',
+
   // Default admin seeded on first run (only used when the users table is empty).
   admin: {
     username: process.env.ADMIN_USERNAME || 'admin',

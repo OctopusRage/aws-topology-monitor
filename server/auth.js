@@ -22,18 +22,36 @@ export function newToken() {
 }
 
 // ---- middleware factories (need the db + queries; injected to avoid cycles) ----
-export function makeAuthMiddleware(getUserByToken) {
+// `apiKey` (optional): a static key that grants read-only `user` access to
+// scripts without a login session. Sent as `Authorization: Bearer <key>` or
+// `X-API-Key: <key>`.
+export function makeAuthMiddleware(getUserByToken, { apiKey = '' } = {}) {
   function bearer(req) {
     const h = req.headers.authorization || '';
     return h.startsWith('Bearer ') ? h.slice(7) : null;
   }
 
+  function safeEqual(a, b) {
+    const x = Buffer.from(String(a));
+    const y = Buffer.from(String(b));
+    return x.length === y.length && crypto.timingSafeEqual(x, y);
+  }
+
+  const API_KEY_USER = Object.freeze({ id: 0, username: 'api-key', role: 'user' });
+
   const requireAuth = (req, res, next) => {
     const token = bearer(req);
     const user = token && getUserByToken(token);
-    if (!user) return res.status(401).json({ error: 'unauthorized' });
-    req.user = user;
-    next();
+    if (user) {
+      req.user = user;
+      return next();
+    }
+    const presented = req.headers['x-api-key'] || token;
+    if (apiKey && presented && safeEqual(presented, apiKey)) {
+      req.user = API_KEY_USER;
+      return next();
+    }
+    res.status(401).json({ error: 'unauthorized' });
   };
 
   const requireAdmin = (req, res, next) => {
